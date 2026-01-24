@@ -24,8 +24,6 @@ KEYWORD_EMOJI_TAGS: dict[str, str] = {
     "PG60": ":flag_de:",
 }
 
-
-
 # ---------------- HELPER FUNCTIONS ----------------
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -82,10 +80,9 @@ class EmbedManager(commands.Cog):
 
             def _repl(match: re.Match) -> str:
                 # Avoid double-appending if already followed by an emoji-like token.
-                start = match.start()
                 end = match.end()
                 tail = formatted[end:end + 32]
-                if emoji_str in tail:
+                if emoji_str in tail or emoji_tag in tail:
                     return match.group(0)
                 return f"{match.group(0)} {emoji_str}"
 
@@ -96,18 +93,18 @@ class EmbedManager(commands.Cog):
     def _apply_schedule_emoji_tags(self, guild: discord.Guild, embed: discord.Embed) -> None:
         """Mutate embed fields so schedule fixtures include team emojis."""
 
-        # Rebuild the embed from its dict so we can update field values cleanly.
-        data = embed.to_dict()
-        fields = data.get("fields", [])
-        for field in fields:
-            value = field.get("value")
+        # discord.py field proxies are read-only; rebuild fields safely.
+        original_fields = list(getattr(embed, "fields", []))
+        rebuilt = []
+        for f in original_fields:
+            value = f.value
             if isinstance(value, str):
-                field["value"] = self._append_team_emojis(guild, value)
+                value = self._append_team_emojis(guild, value)
+            rebuilt.append((f.name, value, f.inline))
 
-        updated = discord.Embed.from_dict(data)
         embed.clear_fields()
-        for f in updated.fields:
-            embed.add_field(name=f.name, value=f.value, inline=f.inline)
+        for name, value, inline in rebuilt:
+            embed.add_field(name=name, value=value, inline=inline)
 
     # ---------------- CHEAT SHEET ----------------
     """
