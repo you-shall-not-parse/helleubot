@@ -2,12 +2,25 @@ import discord
 from discord.ext import commands
 import json
 import os
+import re
 
 # ---------------- CONFIG ----------------
 GUILD_ID = 1462382487622914079  # your guild ID
 COG_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(COG_DIR, os.pardir))
 DATA_FILE = os.path.join(PROJECT_ROOT, "stored_embeds.json")
+
+# Team/keyword emoji tagging (like eventscalendar)
+KEYWORD_EMOJI_TAGS: dict[str, str] = {
+    "RDG": ":RDG:",
+    "RMC": ":RMC:",
+    "48th": ":48th:",
+    "7DR": ":7DR:",
+    "7PD": ":7PD:",
+    "ITHL": ":flag_it:",
+    "OFIN": ":flag_fi:",
+    "PG60": ":flag_de:",
+}
 
 
 
@@ -31,6 +44,68 @@ class EmbedManager(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data = load_data()
+
+    def _resolve_custom_emoji(self, guild: discord.Guild, emoji_tag: str) -> str:
+        """Resolve a tag like ':name:' to '<:name:id>' if possible."""
+
+        emoji_name = emoji_tag.strip(":")
+        if not emoji_name:
+            return emoji_tag
+
+        for emoji in getattr(guild, "emojis", []):
+            if emoji.name == emoji_name:
+                return str(emoji)
+
+        # Not found; return the original tag (may display as text)
+        return emoji_tag
+
+    def _append_team_emojis(self, guild: discord.Guild, text: str) -> str:
+        """Append configured emojis after matching keywords in text."""
+
+        if not text or not KEYWORD_EMOJI_TAGS:
+            return text
+
+        formatted = text
+
+        # Longer keys first to avoid partial matches.
+        for keyword in sorted(KEYWORD_EMOJI_TAGS.keys(), key=len, reverse=True):
+            emoji_tag = KEYWORD_EMOJI_TAGS.get(keyword)
+            if not emoji_tag:
+                continue
+
+            emoji_str = self._resolve_custom_emoji(guild, emoji_tag)
+
+            # Match keyword as a standalone token (not inside another word).
+            pattern = re.compile(rf"(?<!\\w){re.escape(keyword)}(?!\\w)")
+
+            def _repl(match: re.Match) -> str:
+                # Avoid double-appending if already followed by an emoji-like token.
+                start = match.start()
+                end = match.end()
+                tail = formatted[end:end + 32]
+                if emoji_str in tail:
+                    return match.group(0)
+                return f"{match.group(0)} {emoji_str}"
+
+            formatted = pattern.sub(_repl, formatted)
+
+        return formatted
+
+    def _apply_schedule_emoji_tags(self, guild: discord.Guild, embed: discord.Embed) -> None:
+        """Mutate embed fields so schedule fixtures include team emojis."""
+
+        # Rebuild the embed from its dict so we can update field values cleanly.
+        data = embed.to_dict()
+        fields = data.get("fields", [])
+        for field in fields:
+            value = field.get("value")
+            if isinstance(value, str):
+                field["value"] = self._append_team_emojis(guild, value)
+
+        updated = discord.Embed.from_dict(data)
+        embed.clear_fields()
+        for f in updated.fields:
+            embed.add_field(name=f.name, value=f.value, inline=f.inline)
 
     # ---------------- CHEAT SHEET ----------------
     """
@@ -366,6 +441,10 @@ class EmbedManager(commands.Cog):
 
         key = block["key"]
         embed_to_post = block["embed"]
+
+        # Apply team emoji tagging to the schedule embed (Embed 4)
+        if key == "schedule" and hasattr(channel, "guild") and channel.guild is not None:
+            self._apply_schedule_emoji_tags(channel.guild, embed_to_post)
         stored_id = self.data.get(key)
 
         msg = None
