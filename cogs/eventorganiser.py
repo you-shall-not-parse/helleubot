@@ -608,10 +608,6 @@ class OpponentRoundView(discord.ui.View):
 		self.add_item(self.round_select)
 		self.add_item(CreateThreadButton())
 
-	@discord.ui.select()
-	async def _unused(self, interaction: discord.Interaction, select: discord.ui.Select):
-		pass
-
 	async def interaction_check(self, interaction: discord.Interaction) -> bool:
 		# Capture selections
 		for item in self.children:
