@@ -64,12 +64,11 @@ class EmbedManager(commands.Cog):
 
         # ---------------- EMBED 1: ABOUT US ----------------
         embed1 = discord.Embed(
-            title="About Us",
+            title="📌 # The Allied Front HLL League",
             description=(
-                "Games over admin. Automation over moderation. Fairness through structure.\n\n"
-                "**One league. One table. One map per round. One bot doing the work.**"
+                "Games over admin. Automation over moderation. Fair play over all else.\n\n"
             ),
-            color=discord.Color.red(),
+            color=discord.Color.blurple(),
         )
 
         if ABOUT_US_IMAGE_URL:
@@ -78,7 +77,7 @@ class EmbedManager(commands.Cog):
             embed1.set_thumbnail(url=ABOUT_US_THUMBNAIL_URL)
 
         embed1.add_field(
-            name="Discord Structure",
+            name="Structure",
             value=(
                 "- Discord is **apply-to-join**\n"
                 "- **2–3 clan representatives** per clan (no other clan members)\n"
@@ -89,65 +88,48 @@ class EmbedManager(commands.Cog):
         embed1.add_field(
             name="How the League Runs",
             value=(
-                "- Official updates are delivered via <#1462384116376014911> which you can feed into your clan discord\n"
+                "- Single division, everyone plays each team once\n"
                 "- Match scheduling is handled directly between clan representatives\n"
-                "- Fixtures, results, and standings are provided **remotely**"
+                "- Fixtures, results, media and standings are provided **remotely\n** into your clam discord"
+                "- Single division, simple <#1464642927438463269>\n"
             ),
             inline=False,
         )
         embed1.add_field(
             name="Automation (Bot System)",
             value=(
-                "- Fixtures posted automatically via announcement embeds\n"
+                "- Fixtures posted automatically via <#1462387812815998997>\n"
                 "- Scores submitted via button-based embeds\n"
                 "- Opposing clan must confirm the result\n"
-                "- Once confirmed: results lock and the league table updates + reposts"
-            ),
-            inline=False,
-        )
-        embed1.add_field(
-            name="Links",
-            value=(
-                "Rules document: *(coming soon)*\n"
-                "League support/contact: <#1462388616025210952>"
             ),
             inline=False,
         )
 
-        embed1.add_field(name="\u200b", value="\u200b", inline=False)
+        # ---------------- EMBED 2: EVERYTHING AFTER SPLIT ----------------
+        embed2 = discord.Embed(
+            title="Rules",
+            color=discord.Color.blurple(),
+        )
+        if ABOUT_US_THUMBNAIL_URL:
+            embed2.set_thumbnail(url=ABOUT_US_THUMBNAIL_URL)
 
-        embed1.add_field(
-            name="League Overview",
-            value="Low-admin, low-friction, highly automated league play.",
-            inline=False,
-        )
-        embed1.add_field(
-            name="Teams Participating",
+        embed2.add_field(
+            name="**Possible** Teams Participating",
             value=(
-                "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, Ofins\n"
-                "Maybe: Crow/ZFG, Sov/KRTS"
+                "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, OFIN\n"
             ),
             inline=False,
         )
-        embed1.add_field(
-            name="Format",
-            value=(
-                "- Single division\n"
-                "- Everyone plays everyone once\n"
-                "- 7 rounds for 8 teams"
-            ),
-            inline=False,
-        )
-        embed1.add_field(
+        embed2.add_field(
             name="Rounds & Scheduling",
             value=(
                 "- Each round has a **2-week window**\n"
                 "- Can be extended to **3 weeks** on request\n"
-                "- Fixture numbers are flexible: **30–50 players** (agreed in <#1462384116376014911>)"
+                "- Fixture numbers are flexible: **30–50 players** (agreed in <#1462382488784470181>)"
             ),
             inline=False,
         )
-        embed1.add_field(
+        embed2.add_field(
             name="Maps, Sides & Servers",
             value=(
                 "- One map per round — all teams play the same map\n"
@@ -157,7 +139,7 @@ class EmbedManager(commands.Cog):
             ),
             inline=False,
         )
-        embed1.add_field(
+        embed2.add_field(
             name="Scoring & Standings",
             value=(
                 "- Scoring is based solely on **points scored per match**\n"
@@ -165,15 +147,8 @@ class EmbedManager(commands.Cog):
             ),
             inline=False,
         )
-        embed1.add_field(
-            name="Dropouts",
-            value=(
-                "If a team drops out mid-season, remaining opponents receive a **bye** and the league continues without disruption."
-            ),
-            inline=False,
-        )
-        embed1.add_field(
-            name="Ruleset Notes",
+        embed2.add_field(
+            name="Ruleset Highlights",
             value=(
                 "- No roster locking\n"
                 "- Admin cam logs / player_ids may be requested\n"
@@ -181,10 +156,24 @@ class EmbedManager(commands.Cog):
             ),
             inline=False,
         )
+
+        embed2.add_field(
+            name="Links",
+            value=(
+                "League support/contact: <#1462388616025210952>"
+            ),
+            inline=False,
+        )
+
         blocks.append({
             "key": "about_us",
             "channel_id": 1462387027046830212,
             "embed": embed1
+        })
+        blocks.append({
+            "key": "rules",
+            "channel_id": 1464642927438463269,
+            "embed": embed2
         })
 
         return blocks
