@@ -11,7 +11,6 @@ GUILD_ID = 1462382487622914079  # your guild ID
 COG_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(COG_DIR, os.pardir))
 DATA_FILE = data_path("stored_embeds.json")
-LEGACY_DATA_FILE = os.path.join(PROJECT_ROOT, "stored_embeds.json")
 
 # Team/keyword emoji tagging (like eventscalendar)
 KEYWORD_EMOJI_TAGS: dict[str, str] = {
@@ -28,20 +27,7 @@ KEYWORD_EMOJI_TAGS: dict[str, str] = {
 
 
 # ---------------- HELPER FUNCTIONS ----------------
-def migrate_legacy_stored_embeds() -> None:
-    """One-time migration: move stored_embeds.json from repo root into ./data/."""
-
-    try:
-        if os.path.exists(LEGACY_DATA_FILE) and not os.path.exists(DATA_FILE):
-            os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-            os.replace(LEGACY_DATA_FILE, DATA_FILE)
-            print(f"[EmbedManager] Migrated stored embeds to {DATA_FILE}")
-    except Exception as e:
-        print(f"[EmbedManager] Could not migrate legacy stored_embeds.json: {e}")
-
-
 def load_data():
-    migrate_legacy_stored_embeds()
     if not os.path.exists(DATA_FILE):
         return {}
     with open(DATA_FILE, "r") as f:
