@@ -9,10 +9,7 @@ COG_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(COG_DIR, os.pardir))
 DATA_FILE = os.path.join(PROJECT_ROOT, "stored_embeds.json")
 
-# Optional: use a direct image URL (Discord CDN, Imgur direct link, etc.)
-# Leave empty ("") to disable.
-ABOUT_US_IMAGE_URL = "https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681"
-ABOUT_US_THUMBNAIL_URL = ""
+
 
 # ---------------- HELPER FUNCTIONS ----------------
 def load_data():
@@ -64,57 +61,62 @@ class EmbedManager(commands.Cog):
 
         # ---------------- EMBED 1: ABOUT US ----------------
         embed1 = discord.Embed(
-            title="📌 # The Allied Front HLL League",
+            title="📌 The Allied Front HLL League",
             description=(
                 "Games over admin. Automation over moderation. Fair play over all else.\n\n"
             ),
             color=discord.Color.blurple(),
         )
 
-        if ABOUT_US_IMAGE_URL:
-            embed1.set_image(url=ABOUT_US_IMAGE_URL)
-        if ABOUT_US_THUMBNAIL_URL:
-            embed1.set_thumbnail(url=ABOUT_US_THUMBNAIL_URL)
-
         embed1.add_field(
             name="Structure",
             value=(
                 "- Discord is **apply-to-join**\n"
                 "- **2–3 clan representatives** per clan (no other clan members)\n"
-                "- No league chat channels — only <#1462382488784470181>"
+                "- No league chat channels, only <#1462382488784470181>"
             ),
             inline=False,
         )
         embed1.add_field(
-            name="How the League Runs",
+            name="🗂️League Format",
             value=(
                 "- Single division, everyone plays each team once\n"
                 "- Match scheduling is handled directly between clan representatives\n"
-                "- Fixtures, results, media and standings are provided **remotely\n** into your clam discord"
                 "- Single division, simple <#1464642927438463269>\n"
             ),
             inline=False,
         )
         embed1.add_field(
-            name="Automation (Bot System)",
+            name="Scores & Fixtures",
             value=(
-                "- Fixtures posted automatically via <#1462387812815998997>\n"
+                "- Fixtures, results, media and standings are provided **remotely** into your clan discord\n"
                 "- Scores submitted via button-based embeds\n"
-                "- Opposing clan must confirm the result\n"
+                "- Opposing clan confirm the result\n"
             ),
             inline=False,
         )
 
+        # Image URLs for EMBED 1 (paste Discord CDN links here)
+        embed1_image_url = ""
+        embed1_thumbnail_url = ""
+        if embed1_image_url:
+            embed1.set_image(url=embed1_image_url)
+        if embed1_thumbnail_url:
+            embed1.set_thumbnail(url=embed1_thumbnail_url)
+
+        blocks.append({
+            "key": "about_us",
+            "channel_id": 1462387027046830212,
+            "embed": embed1
+        })
         # ---------------- EMBED 2: EVERYTHING AFTER SPLIT ----------------
         embed2 = discord.Embed(
             title="Rules",
             color=discord.Color.blurple(),
         )
-        if ABOUT_US_THUMBNAIL_URL:
-            embed2.set_thumbnail(url=ABOUT_US_THUMBNAIL_URL)
 
         embed2.add_field(
-            name="**Possible** Teams Participating",
+            name="👥**Possible** Teams Participating",
             value=(
                 "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, OFIN\n"
             ),
@@ -130,10 +132,11 @@ class EmbedManager(commands.Cog):
             inline=False,
         )
         embed2.add_field(
-            name="Maps, Sides & Servers",
+            name="🗺️ Maps, Sides & Servers",
             value=(
                 "- One map per round — all teams play the same map\n"
                 "- Once used, the map leaves the pool\n"
+                "- Maps are chosen randomly from the pool and all maps except Stalingrad... are included\n"
                 "- Mid-point: spin-the-wheel\n"
                 "- Sides + server host decided by coin flip"
             ),
@@ -165,15 +168,50 @@ class EmbedManager(commands.Cog):
             inline=False,
         )
 
-        blocks.append({
-            "key": "about_us",
-            "channel_id": 1462387027046830212,
-            "embed": embed1
-        })
+        # Image URLs for EMBED 2 (paste Discord CDN links here)
+        embed2_image_url = ""
+        embed2_thumbnail_url = ""
+        if embed2_image_url:
+            embed2.set_image(url=embed2_image_url)
+        if embed2_thumbnail_url:
+            embed2.set_thumbnail(url=embed2_thumbnail_url)
+
         blocks.append({
             "key": "rules",
             "channel_id": 1464642927438463269,
             "embed": embed2
+        })
+
+        # ---------------- EMBED 3: DISCORD SERVER RULES ----------------
+        embed3 = discord.Embed(
+            title="Discord Server Rules & Conduct",
+            description=(
+                "1. Fair play at all times\n"
+                "2. Keep it simple - organise events or stay up-to-date.\n"
+                "3. No inappropriate profile pictures.\n"
+                "4. No @mentioning spam.\n"
+                "5. No NSFW or Illegal content.\n"
+                "6. No personal attacks.\n"
+                "7. No harassment.\n"
+                "8. No sexism.\n"
+                "9. No racism.\n"
+                "10. No hate speech."
+            ),
+            color=discord.Color.blurple(),
+        )
+
+        # Image URLs for EMBED 3 (paste Discord CDN links here)
+        embed3_image_url = ""
+        embed3_thumbnail_url = ""
+        if embed3_image_url:
+            embed3.set_image(url=embed3_image_url)
+        if embed3_thumbnail_url:
+            embed3.set_thumbnail(url=embed3_thumbnail_url)
+
+        blocks.append({
+            "key": "discord_rules_conduct",
+            "channel_id": 1464642927438463269,
+            "embed": embed3
         })
 
         return blocks
@@ -218,13 +256,6 @@ class EmbedManager(commands.Cog):
     async def on_ready(self):
         print("[EmbedManager] Bot ready — syncing embeds...")
         await self.sync_all_embeds()
-
-    # ---------------- OPTIONAL MANUAL COMMAND ----------------
-    @commands.command(name="sync_embeds")
-    async def sync_embeds_cmd(self, ctx):
-        """Manually sync all embeds to their channels"""
-        await self.sync_all_embeds()
-        await ctx.send("All embeds synced!")
 
 
 # ---------------- SETUP ----------------
