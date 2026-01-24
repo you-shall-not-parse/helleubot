@@ -90,7 +90,7 @@ class EmbedManager(commands.Cog):
             name="📣 Scores & Fixtures",
             value=(
                 "- Fixtures, results, media and standings are provided **remotely** into your clan discord\n"
-                "- Scores submitted via button-based embeds\n"
+                "- Scores submitted via button-based embed message and reposed in <#1462384116376014911>\n"
                 "- Opposing clan confirm the result\n"
             ),
             inline=False,
@@ -213,7 +213,7 @@ class EmbedManager(commands.Cog):
 
         blocks.append({
             "key": "discord_rules_conduct",
-            "channel_id": 1464642927438463269,
+            "channel_id": 1462382688777404601,
             "embed": embed3
         })
 
