@@ -61,47 +61,49 @@ class EmbedManager(commands.Cog):
 
         # ---------------- EMBED 1: ABOUT US ----------------
         embed1 = discord.Embed(
-            title="📌 The Allied Front HLL League",
+            title=":boom: The Allied Front HLL League FAQ :boom:",
             description=(
-                "Games over admin. Automation over moderation. Fair play over all else.\n\n"
+                "*Games over admin. Automation over moderation. Fair play over all else.*\n\n"
             ),
             color=discord.Color.blurple(),
         )
 
         embed1.add_field(
-            name="🎯 Structure",
+            name=":question: How does this discord work?",
             value=(
-                "- Discord is **apply-to-join**\n"
-                "- **2–3 clan representatives** per clan (no other clan members)\n"
+                "- Discord is apply-to-join\n"
+                "- 2–3 clan representatives per clan (no other clan members)\n"
                 "- No league chat channels, only <#1462382488784470181>"
             ),
             inline=False,
         )
         embed1.add_field(
-            name="🗂️League Format",
+            name=":question: How does the league work?",
             value=(
                 "- Single division, everyone plays each team once\n"
                 "- Match scheduling is handled directly between clan representatives\n"
-                "- Simple <#1464642927438463269>\n"
+                "- Fixtures, results, media and standings are provided **remotely** into your clan discord\n"
+                "- Scores submitted via button-based embed message, Opposing clan confirms the result and result is reposed in <#1462384116376014911>\n"
+                "- Check out <#1464642927438463269> for full rules"
             ),
             inline=False,
         )
         embed1.add_field(
-            name="📣 Scores & Fixtures",
+            name=" :pencil: How and when do we join?",
             value=(
-                "- Fixtures, results, media and standings are provided **remotely** into your clan discord\n"
-                "- Scores submitted via button-based embed message, Opposing clan confirms the result and result is reposed in <#1462384116376014911>"
+                "- Check out the current season schedule and fixtures in <#1462384116376014911>\n"
+                "- Contact an admin in <#1462388616025210952> to express interest\n"
             ),
             inline=False,
         )
 
         # Image URLs for EMBED 1 (paste Discord CDN links here)
-        embed1_image_url = ""
+        embed1_image_url = "https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681"
         embed1_thumbnail_url = ""
         if embed1_image_url:
             embed1.set_image(url=embed1_image_url)
         if embed1_thumbnail_url:
-            embed1.set_thumbnail(url="https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681")
+            embed1.set_thumbnail(url=embed1_thumbnail_url)
 
         blocks.append({
             "key": "about_us",
