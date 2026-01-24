@@ -495,6 +495,15 @@ class OpponentSelect(discord.ui.Select):
 			options=options,
 		)
 
+	async def callback(self, interaction: discord.Interaction):
+		view = self.view
+		if isinstance(view, OpponentRoundView) and self.values:
+			view.opponent_clan = self.values[0]
+			# Acknowledge the selection to avoid "This interaction failed".
+			await interaction.response.edit_message(view=view)
+			return
+		await interaction.response.defer()
+
 
 class RoundSelect(discord.ui.Select):
 	def __init__(self):
@@ -508,6 +517,17 @@ class RoundSelect(discord.ui.Select):
 			max_values=1,
 			options=options,
 		)
+
+	async def callback(self, interaction: discord.Interaction):
+		view = self.view
+		if isinstance(view, OpponentRoundView) and self.values:
+			try:
+				view.round_no = int(self.values[0])
+			except Exception:
+				view.round_no = None
+			await interaction.response.edit_message(view=view)
+			return
+		await interaction.response.defer()
 
 
 class CreateThreadButton(discord.ui.Button):
@@ -608,17 +628,7 @@ class OpponentRoundView(discord.ui.View):
 		self.add_item(self.round_select)
 		self.add_item(CreateThreadButton())
 
-	async def interaction_check(self, interaction: discord.Interaction) -> bool:
-		# Capture selections
-		for item in self.children:
-			if isinstance(item, OpponentSelect) and item.values:
-				self.opponent_clan = item.values[0]
-			if isinstance(item, RoundSelect) and item.values:
-				try:
-					self.round_no = int(item.values[0])
-				except Exception:
-					self.round_no = None
-		return True
+	# Selects handle state updates via their callbacks.
 
 
 class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
