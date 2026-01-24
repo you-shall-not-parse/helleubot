@@ -537,6 +537,9 @@ class CreateThreadButton(discord.ui.Button):
 			await interaction.response.send_message("Thread parent channel not found/configured.", ephemeral=True)
 			return
 
+		# This operation can take longer than 3 seconds (thread creation + invites), so defer.
+		await interaction.response.defer(ephemeral=True, thinking=True)
+
 		thread_name = f"R{round_no} {requester_clan} vs {opponent_clan}"
 		if len(thread_name) > 100:
 			thread_name = thread_name[:97] + "..."
@@ -550,13 +553,13 @@ class CreateThreadButton(discord.ui.Button):
 				auto_archive_duration=10080,
 			)
 		except discord.Forbidden:
-			await interaction.response.send_message(
+			await interaction.followup.send(
 				"I don't have permission to create private threads here.",
 				ephemeral=True,
 			)
 			return
 		except Exception as e:
-			await interaction.response.send_message(f"Failed to create thread: {e}", ephemeral=True)
+			await interaction.followup.send(f"Failed to create thread: {e}", ephemeral=True)
 			return
 
 		# Invite members of both clan roles (best-effort).
@@ -586,7 +589,7 @@ class CreateThreadButton(discord.ui.Button):
 		embed = _fixture_embed(s)
 		await thread.send(content=f"{requester_clan} vs {opponent_clan}", embed=embed, view=control_view)
 
-		await interaction.response.send_message(
+		await interaction.followup.send(
 			f"Thread created: {thread.mention} (invited {invited} members)",
 			ephemeral=True,
 		)
@@ -675,8 +678,8 @@ class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
 		state["threads"][s.key] = _state_to_dict(s)
 		_save_state(state)
 
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Date/time proposal recorded.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 
 class TeamSizeModal(discord.ui.Modal, title="Propose Team Size"):
@@ -724,8 +727,8 @@ class TeamSizeModal(discord.ui.Modal, title="Propose Team Size"):
 
 		state["threads"][s.key] = _state_to_dict(s)
 		_save_state(state)
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Team size proposal recorded.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 
 class FixtureThreadView(discord.ui.View):
@@ -780,8 +783,8 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Date/time agreed.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Counter date/time", style=discord.ButtonStyle.secondary, custom_id="fixture:dt_counter")
 	async def counter_datetime(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -820,8 +823,8 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Team size agreed.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Roll map+mid", style=discord.ButtonStyle.primary, custom_id="fixture:map_roll")
 	async def roll_map(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -857,8 +860,8 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Rolled map/midpoint.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Request veto", style=discord.ButtonStyle.danger, custom_id="fixture:map_veto_request")
 	async def request_veto(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -883,8 +886,8 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Veto requested. Waiting for opponent to approve/reject.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Approve veto", style=discord.ButtonStyle.success, custom_id="fixture:map_veto_approve")
 	async def approve_veto(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -924,8 +927,8 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Veto approved and rerolled.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Reject veto", style=discord.ButtonStyle.secondary, custom_id="fixture:map_veto_reject")
 	async def reject_veto(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -943,8 +946,8 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Veto rejected. Map stands.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Decide sides", style=discord.ButtonStyle.primary, custom_id="fixture:sides")
 	async def decide_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -959,8 +962,8 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await _refresh_thread(interaction.client, s.thread_id)
 		await interaction.response.send_message("Sides decided.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Create Discord Event", style=discord.ButtonStyle.success, custom_id="fixture:event")
 	async def create_event(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -968,28 +971,31 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, _ = res
+
+		# Event creation + snapshot posting can take longer than 3 seconds.
+		await interaction.response.defer(ephemeral=True, thinking=True)
 		if s.scheduled_event_id:
-			await interaction.response.send_message("Event already created.", ephemeral=True)
+			await interaction.followup.send("Event already created.", ephemeral=True)
 			return
 		if not s.agreed_datetime_utc:
-			await interaction.response.send_message("Agree the date/time first.", ephemeral=True)
+			await interaction.followup.send("Agree the date/time first.", ephemeral=True)
 			return
 		if not s.agreed_team_size:
-			await interaction.response.send_message("Agree the team size first.", ephemeral=True)
+			await interaction.followup.send("Agree the team size first.", ephemeral=True)
 			return
 		if not (s.current_map and s.current_midpoint):
-			await interaction.response.send_message("Roll map/midpoint first.", ephemeral=True)
+			await interaction.followup.send("Roll map/midpoint first.", ephemeral=True)
 			return
 		if not (s.sides_allies and s.sides_axis):
-			await interaction.response.send_message("Decide sides first.", ephemeral=True)
+			await interaction.followup.send("Decide sides first.", ephemeral=True)
 			return
 		if interaction.guild is None:
-			await interaction.response.send_message("Server only.", ephemeral=True)
+			await interaction.followup.send("Server only.", ephemeral=True)
 			return
 
 		guild = interaction.guild
 		if guild.id != SCHEDULED_EVENT_GUILD_ID:
-			await interaction.response.send_message("This interaction is in the wrong guild for event creation.", ephemeral=True)
+			await interaction.followup.send("This interaction is in the wrong guild for event creation.", ephemeral=True)
 			return
 
 		start_dt = datetime.fromisoformat(s.agreed_datetime_utc)
@@ -1013,7 +1019,7 @@ class FixtureThreadView(discord.ui.View):
 			if SCHEDULED_EVENT_CHANNEL_ID:
 				channel = guild.get_channel(SCHEDULED_EVENT_CHANNEL_ID)
 				if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
-					await interaction.response.send_message("Configured event channel is invalid.", ephemeral=True)
+					await interaction.followup.send("Configured event channel is invalid.", ephemeral=True)
 					return
 				ev = await guild.create_scheduled_event(
 					name=_fixture_title(s),
@@ -1031,10 +1037,10 @@ class FixtureThreadView(discord.ui.View):
 					description=desc,
 				)
 		except discord.Forbidden:
-			await interaction.response.send_message("Missing permissions to create scheduled events.", ephemeral=True)
+			await interaction.followup.send("Missing permissions to create scheduled events.", ephemeral=True)
 			return
 		except Exception as e:
-			await interaction.response.send_message(f"Failed to create event: {e}", ephemeral=True)
+			await interaction.followup.send(f"Failed to create event: {e}", ephemeral=True)
 			return
 
 		s.scheduled_event_id = ev.id
@@ -1063,8 +1069,8 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await _refresh_thread(interaction.client, s.thread_id)
-		await interaction.response.send_message(f"Event created: {ev.url}", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+		await interaction.followup.send(f"Event created: {ev.url}", ephemeral=True)
 
 
 async def _refresh_thread(client: discord.Client, thread_id: int) -> None:
@@ -1122,12 +1128,12 @@ class EventOrganiser(commands.Cog):
 			title="Fixture Organiser",
 			description=(
 			    "Use the buttons below to organise the fixture end-to-end.\n"
-			    "1) Propose date/time (must be within the round window)\n"
-			    "2) Agree/counter until locked\n"
-			    "3) Propose team size (30-50, equal sizes)\n"
-			    "4) Roll map and midpoint, then optional veto workflow\n"
-			    "5) Randomly assign sides (Allies/Axis)\n"
-			    "6) Create the Discord event when ready!"
+			    "1. Propose date/time (must be within the round window)\n"
+			    "2. Agree/counter until locked\n"
+			    "3. Propose team size (30-50, equal sizes)\n"
+			    "4. Roll map and midpoint, then optional veto workflow\n"
+			    "5. Randomly assign sides (Allies/Axis)\n"
+			    "6. Create the Discord event and it'll go in the calendar!"
 			),
 			color=discord.Color.blurple(),
 		)
