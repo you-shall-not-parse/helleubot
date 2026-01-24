@@ -1121,13 +1121,13 @@ class EventOrganiser(commands.Cog):
 		embed = discord.Embed(
 			title="Fixture Organiser",
 			description=(
-				"Press **Organise Fixture** to create a private thread for a match and run through: \n"
-				"- Round selection (1–7)\n"
-				"- Date/time proposal (must be within the round window)\n"
-				"- Team size proposal (30–50 vs 30–50)\n"
-				"- Random map + midpoint with up to 3 veto approvals per clan\n"
-				"- Random sides assignment\n"
-				"- Automatic Discord scheduled event creation"
+			    "Use the buttons below to organise the fixture end-to-end.\n"
+			    "1) Propose date/time (must be within the round window)\n"
+			    "2) Agree/counter until locked\n"
+			    "3) Propose team size (30-50, equal sizes)\n"
+			    "4) Roll map and midpoint, then optional veto workflow\n"
+			    "5) Randomly assign sides (Allies/Axis)\n"
+			    "6) Create the Discord event when ready!"
 			),
 			color=discord.Color.blurple(),
 		)
