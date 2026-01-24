@@ -77,6 +77,7 @@ async def main():
     async with bot:
         await bot.load_extension("cogs.echo")
         await bot.load_extension("cogs.EmbedManager")
+        await bot.load_extension("cogs.eventscalendar")
         await bot.start(TOKEN)
 
 if __name__ == "__main__":
