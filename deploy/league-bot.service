@@ -1,0 +1,29 @@
+[Unit]
+Description=League Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+
+# Match the layout of your existing bot service:
+# - repo lives under /home/ubuntu/...
+# - virtualenv folder named "venv"
+WorkingDirectory=/home/ubuntu/league-bot
+
+# If you use a per-project .env file on the VPS, point to it here.
+# It should contain LEAGUE_BOT_TOKEN=... (and any other config like ECHO_GUILD_ID, etc.)
+EnvironmentFile=/home/ubuntu/league-bot/.env
+
+# Use the project's virtual environment
+ExecStart=/home/ubuntu/league-bot/venv/bin/python /home/ubuntu/league-bot/main.py
+
+Restart=on-failure
+RestartSec=5
+
+# Helpful defaults
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
