@@ -82,7 +82,7 @@ class EmbedManager(commands.Cog):
             value=(
                 "- Single division, everyone plays each team once\n"
                 "- Match scheduling is handled directly between clan representatives\n"
-                "- Single division, simple <#1464642927438463269>\n"
+                "- Simple <#1464642927438463269>\n"
             ),
             inline=False,
         )
@@ -138,6 +138,7 @@ class EmbedManager(commands.Cog):
                 "- Maps are chosen randomly from the pool and all maps except Stalingrad, Driel, Remagen, Smolensk are included\n"
                 "- Mid-point: spin-the-wheel\n"
                 "- Sides + server host decided by coin flip"
+                "- Streaming is permitted but must not be live"
             ),
             inline=False,
         )
@@ -146,22 +147,52 @@ class EmbedManager(commands.Cog):
             value=(
                 "- Scoring is based solely on **points scored per match**\n"
                 "- League table ordered by **total points accumulated**"
+                "- The team with the better W/L record will be awared the higher seed, if this is tied then a final match shall be played to determine the first-place seed"
             ),
             inline=False,
         )
         embed2.add_field(
             name="📜 Anti-Cheat and Game Time Provisions",
             value=(
-                "- No roster locks\n"
-                "- Admin cam logs / player_ids may be requested\n"
+                "- No roster locks required\n"
+                "- Admin cam logs / player_ids may be requested by the opposing team\n"
                 "- No win condition within the first 30 minutes\n"
-                "- Deliberate clipping inside an asset that prevents you being shot during normal gameplay is prohibited, this does not include terrain clipping as a result of natural gameplay\n"
+                "- Deliberate clipping inside an asset that prevents you being shot but allows you to shoot out is prohibited, this does not include terrain clipping as a result of natural gameplay\n"
                 "- The use of rooftops is permitted\n"
-                "- Failure to comply may result in forfeiture of the match"
+                "- The use of cronus/XIM or other controller emulator is prohibited\n"
+                "- Hired guns are not permitted however coalition teams may be formed and fielded\n"
+                "- Players transferred between clans competing in the current season are not permitted to play for their new clan until the following season\n"
+                "- Footage and concequence is subject to review by league admins if submitted as part of a protest\n"
             ),
             inline=False,
         )
-
+        embed2.add_field(
+            name=":boom: Artillery, SPA & Panther",
+            value=(
+                "- The use of HLL log utilities is prohibited, trust is key in this league\n"
+                "- Only one artillery squad may be opened per team at any time.\n"
+                "- Artillery Observer (SL) must operate the gun and cannot move freely on the map\n"
+                "- Designated Artillery Player (DAP) & Reloader:\n"
+                "   - First player to get a kill becomes the DAP.\n"
+                "   - Each team may assign one reloader in the same artillery squad who assists the DAP.\n"
+                "   - Both must stay on one assigned gun; you cannot switch guns.\n"
+                "   - Both cannot leave the gun or attack enemies.\n"
+                "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
+                "- Failure to comply may result in forfeiture of the match and points deducted\n"
+                "- SPA is prohibited unless otherwise explicitly agreed and driving (only) within the HQ permitted to move it\n"
+                "- Commander artillery is prohibited" 
+                "- Panther tank is prohibited unless otherwise explicitly agreed and driving (only) within the HQ permitted to move it"
+            ),
+            inline=False,
+        )
+        embed2.add_field(
+            name=" :tools: Indestructable Nodes",
+            value=(
+                "- Nodes must be build in an HQ sector that is away from artillery and vehicle spawns\n"
+                "- Nodes cannot be destroyed or dismantled by the opposing team\n"
+            ),
+            inline=False,
+        )
 
         embed2.add_field(
             name="Links",
