@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import asyncio
 
 load_dotenv()
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+TOKEN = os.getenv("LEAGUE_BOT_TOKEN")
 
 # Setup logging (console + file)
 logger = logging.getLogger()
@@ -73,7 +73,7 @@ async def on_command_error(ctx, error):
 
 async def main():
     if not TOKEN:
-        raise RuntimeError("DISCORD_BOT_TOKEN is not set in your environment or .env file!")
+        raise RuntimeError("LEAGUE_BOT_TOKEN is not set in your environment or .env file!")
     async with bot:
         await bot.load_extension("cogs.echo")
         await bot.start(TOKEN)

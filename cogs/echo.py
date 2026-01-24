@@ -1,12 +1,11 @@
-import os
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 
 # Guild-scoped commands require a guild sync (see on_ready below).
-ECHO_GUILD_ID = ""
-ECHO_ROLE_ID = "1462383096019157149"
+ECHO_GUILD_ID = 1462382487622914079
+ECHO_ROLE_ID = 1462383096019157149
 TARGET_GUILD = discord.Object(id=ECHO_GUILD_ID)
 
 
