@@ -76,6 +76,7 @@ async def main():
         raise RuntimeError("LEAGUE_BOT_TOKEN is not set in your environment or .env file!")
     async with bot:
         await bot.load_extension("cogs.echo")
+        await bot.load_extension("cogs.EmbedManager")
         await bot.start(TOKEN)
 
 if __name__ == "__main__":
