@@ -90,8 +90,7 @@ class EmbedManager(commands.Cog):
             name="📣 Scores & Fixtures",
             value=(
                 "- Fixtures, results, media and standings are provided **remotely** into your clan discord\n"
-                "- Scores submitted via button-based embed message and reposed in <#1462384116376014911>\n"
-                "- Opposing clan confirm the result\n"
+                "- Scores submitted via button-based embed message, Opposing clan confirms the result and result is reposed in <#1462384116376014911>"
             ),
             inline=False,
         )
@@ -102,7 +101,7 @@ class EmbedManager(commands.Cog):
         if embed1_image_url:
             embed1.set_image(url=embed1_image_url)
         if embed1_thumbnail_url:
-            embed1.set_thumbnail(url=embed1_thumbnail_url)
+            embed1.set_thumbnail(url="https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681")
 
         blocks.append({
             "key": "about_us",
@@ -156,8 +155,9 @@ class EmbedManager(commands.Cog):
                 "- No roster locks\n"
                 "- Admin cam logs / player_ids may be requested\n"
                 "- No win condition within the first 30 minutes\n"
+                "- Deliberate clipping inside an asset that prevents you being shot during normal gameplay is prohibited, this does not include terrain clipping as a result of natural gameplay\n"
+                "- The use of rooftops is permitted\n"
                 "- Failure to comply may result in forfeiture of the match"
-                "- Accessble structures and glitches..."
             ),
             inline=False,
         )
@@ -189,16 +189,15 @@ class EmbedManager(commands.Cog):
         embed3 = discord.Embed(
             title="Discord Server Rules & Conduct",
             description=(
-                "1. Fair play at all times\n"
-                "2. Keep it simple - organise events or stay up-to-date.\n"
-                "3. No inappropriate profile pictures.\n"
-                "4. No @mentioning spam.\n"
-                "5. No NSFW or Illegal content.\n"
-                "6. No personal attacks.\n"
-                "7. No harassment.\n"
-                "8. No sexism.\n"
-                "9. No racism.\n"
-                "10. No hate speech."
+                "1. Keep it simple - organise events or stay up-to-date.\n"
+                "2. No inappropriate profile pictures.\n"
+                "3. No @mentioning spam.\n"
+                "4. No NSFW or Illegal content.\n"
+                "5. No personal attacks.\n"
+                "6. No harassment.\n"
+                "7. No sexism.\n"
+                "8. No racism.\n"
+                "9. No hate speech."
             ),
             color=discord.Color.blurple(),
         )
