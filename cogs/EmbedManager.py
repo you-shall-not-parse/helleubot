@@ -61,7 +61,7 @@ class EmbedManager(commands.Cog):
 
         # ---------------- EMBED 1: ABOUT US ----------------
         embed1 = discord.Embed(
-            title=":boom: The Allied Front HLL League FAQ :boom:",
+            title=":boom: League FAQ :boom:",
             description=(
                 "*Games over admin. Automation over moderation. Fair play over all else.*\n\n"
             ),
@@ -91,6 +91,7 @@ class EmbedManager(commands.Cog):
         embed1.add_field(
             name=" :pencil: How and when do we join?",
             value=(
+                "- European teams :flag_eu: only are permitted to take part\n"
                 "- Check out the current season schedule and fixtures in <#1462384116376014911>\n"
                 "- Contact an admin in <#1462388616025210952> to express interest\n"
             ),
@@ -117,30 +118,22 @@ class EmbedManager(commands.Cog):
         )
 
         embed2.add_field(
-            name="👥**Possible** Teams Participating",
-            value=(
-                "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, OFIN\n"
-            ),
-            inline=False,
-        )
-        embed2.add_field(
             name="🔢 Rounds & Scheduling",
             value=(
                 "- Each round has a **2-week window**\n"
                 "- Can be extended to **3 weeks** on request\n"
-                "- Fixture numbers are flexible: **30–50 players** (agreed in <#1462382488784470181>)"
+                "- Fixture player numbers between **30–50 players** as agreed with opponent in <#1462382488784470181>"
             ),
             inline=False,
         )
         embed2.add_field(
             name="🗺️ Maps, Sides & Servers",
             value=(
-                "- One map per round — all teams play the same map\n"
-                "- Once used, the map leaves the pool\n"
+                "- One map per round — all teams play the same map then the map leaves the pool\n"
                 "- Maps are chosen randomly from the pool and all maps except Stalingrad, Driel, Remagen, Smolensk are included\n"
-                "- Mid-point: spin-the-wheel\n"
-                "- Sides + server host decided by coin flip"
-                "- Streaming is permitted but must not be live"
+                "- Mid-point: Spin the Wheel\n"
+                "- Sides and Server host decided by coin flip\n"
+                "- Streaming is permitted but must not be live and must be agreed before the match with opponent"
             ),
             inline=False,
         )
@@ -148,13 +141,13 @@ class EmbedManager(commands.Cog):
             name="🏆 Scoring & Standings",
             value=(
                 "- Scoring is based solely on **points scored per match**\n"
-                "- League table ordered by **total points accumulated**"
+                "- League table ordered by **total points accumulated\n**"
                 "- The team with the better W/L record will be awared the higher seed, if this is tied then a final match shall be played to determine the first-place seed"
             ),
             inline=False,
         )
         embed2.add_field(
-            name="📜 Anti-Cheat and Game Time Provisions",
+            name="📜 Anti-Cheat and Duration Protection",
             value=(
                 "- No roster locks required\n"
                 "- Admin cam logs / player_ids may be requested by the opposing team\n"
@@ -164,7 +157,7 @@ class EmbedManager(commands.Cog):
                 "- The use of cronus/XIM or other controller emulator is prohibited\n"
                 "- Hired guns are not permitted however coalition teams may be formed and fielded\n"
                 "- Players transferred between clans competing in the current season are not permitted to play for their new clan until the following season\n"
-                "- Footage and concequence is subject to review by league admins if submitted as part of a protest\n"
+                "- Footage and consequence is subject to review by league admins if submitted as part of a protest\n"
             ),
             inline=False,
         )
@@ -182,7 +175,7 @@ class EmbedManager(commands.Cog):
                 "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
                 "- Failure to comply may result in forfeiture of the match and points deducted\n"
                 "- SPA is prohibited unless otherwise explicitly agreed and driving (only) within the HQ permitted to move it\n"
-                "- Commander artillery is prohibited" 
+                "- Commander artillery is prohibited\n" 
                 "- Panther tank is prohibited unless otherwise explicitly agreed and driving (only) within the HQ permitted to move it"
             ),
             inline=False,
@@ -190,7 +183,7 @@ class EmbedManager(commands.Cog):
         embed2.add_field(
             name=" :tools: Indestructable Nodes",
             value=(
-                "- Nodes must be build in an HQ sector that is away from artillery and vehicle spawns\n"
+                "- Nodes must be built in an HQ sector that is away from artillery and vehicle spawns\n"
                 "- Nodes cannot be destroyed or dismantled by the opposing team\n"
             ),
             inline=False,
@@ -247,6 +240,77 @@ class EmbedManager(commands.Cog):
             "key": "discord_rules_conduct",
             "channel_id": 1462382688777404601,
             "embed": embed3
+        })
+
+        # ---------------- EMBED 4: Schedule and Fixes ----------------
+        embed4 = discord.Embed(
+            title=":calendar: Fixtures & Schedule",
+            description="Round windows for the current season.",
+            color=discord.Color.blurple(),
+        )
+
+        embed4.add_field(
+            name="👥**Possible** Teams Participating",
+            value=(
+                "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, OFIN\n"
+            ),
+            inline=False,
+        )
+
+        embed4.add_field(
+            name="Round 1",
+            value="2nd March - 15th March 2026",
+            inline=False,
+        )
+
+        embed4.add_field(
+            name="Round 2",
+            value="16th March - 29th March 2026",
+            inline=False,
+        )
+
+        embed4.add_field(
+            name="Round 3",
+            value="30th March - 12th April 2026",
+            inline=False,
+        )
+
+        embed4.add_field(
+            name="Round 4",
+            value="13th April - 26th April 2026",
+            inline=False,
+        )
+
+        embed4.add_field(
+            name="Round 5",
+            value="27th April - 10th May 2026",
+            inline=False,
+        )
+
+        embed4.add_field(
+            name="Round 6",
+            value="11th May - 24th May 2026",
+            inline=False,
+        )
+
+        embed4.add_field(
+            name="Round 7",
+            value="25th May - 7th June 2026",
+            inline=False,
+        )
+
+        # Image URLs for EMBED 4 (paste Discord CDN links here)
+        embed4_image_url = ""
+        embed4_thumbnail_url = "https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681"
+        if embed4_image_url:
+            embed4.set_image(url=embed4_image_url)
+        if embed4_thumbnail_url:
+            embed4.set_thumbnail(url=embed4_thumbnail_url)
+
+        blocks.append({
+            "key": "schedule",
+            "channel_id": 1462388344205082685,
+            "embed": embed4
         })
 
         return blocks
