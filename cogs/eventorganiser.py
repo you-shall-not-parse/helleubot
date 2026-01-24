@@ -32,14 +32,14 @@ SCHEDULED_EVENT_CHANNEL_ID: Optional[int] = None
 
 # Clan roles (name -> role_id). User must have exactly one of these to start.
 CLAN_ROLE_IDS: dict[str, int] = {
-	"RMC": 0,
-	"7DR": 0,
-	"RDG": 0,
-	"7PD": 0,
-	"PG60": 0,
-	"ITHL": 0,
-	"48th": 0,
-	"OFIN": 0,
+	"RMC": 1462558256147857408,
+	"7DR": 1462383332598743080,
+	"RDG": 1462558410364031097,
+	"7PD": 1464763568506536000,
+	"PG60": 1464763651108896778,
+	"ITHL": 1464763753441788117,
+	"48th": 1464763805509619958,
+	"OFIN": 1464764074985390090,
 }
 
 # Round windows (inclusive) for validation.
