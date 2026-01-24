@@ -83,7 +83,7 @@ class EmbedManager(commands.Cog):
                 "- Single division, everyone plays each team once\n"
                 "- Match scheduling is handled directly between clan representatives\n"
                 "- Fixtures, results, media and standings are provided **remotely** into your clan discord\n"
-                "- Scores submitted via button-based embed message, Opposing clan confirms the result and result is reposed in <#1462384116376014911>\n"
+                "- Scores submitted via button-based embed message, opposing clan confirms the result and result is reposed in <#1462384116376014911>\n"
                 "- Check out <#1464642927438463269> for full rules"
             ),
             inline=False,
@@ -259,49 +259,91 @@ class EmbedManager(commands.Cog):
 
         embed4.add_field(
             name="Round 1",
-            value="2nd March - 15th March 2026",
+            value=(
+                "2nd March - 15th March 2026\n"
+                "RMC vs OFIN\n"
+                "7DR vs 48th\n"
+                "RDG vs ITHL\n"
+                "7PD vs PG60"
+            ),
             inline=False,
         )
 
         embed4.add_field(
             name="Round 2",
-            value="16th March - 29th March 2026",
+            value=(
+                "16th March - 29th March 2026\n"
+                "RMC vs 48th\n"
+                "OFIN vs ITHL\n"
+                "7DR vs PG60\n"
+                "RDG vs 7PD"
+            ),
             inline=False,
         )
 
         embed4.add_field(
             name="Round 3",
-            value="30th March - 12th April 2026",
+            value=(
+                "30th March - 12th April 2026\n"
+                "RMC vs ITHL\n"
+                "48th vs PG60\n"
+                "OFIN vs 7PD\n"
+                "7DR vs RDG"
+            ),
             inline=False,
         )
 
         embed4.add_field(
             name="Round 4",
-            value="13th April - 26th April 2026",
+            value=(
+                "13th April - 26th April 2026\n"
+                "RMC vs PG60\n"
+                "ITHL vs 7PD\n"
+                "48th vs RDG\n"
+                "OFIN vs 7DR"
+            ),
             inline=False,
         )
 
         embed4.add_field(
             name="Round 5",
-            value="27th April - 10th May 2026",
+            value=(
+                "27th April - 10th May 2026\n"
+                "RMC vs 7PD\n"
+                "PG60 vs RDG\n"
+                "ITHL vs 7DR\n"
+                "48th vs OFIN"
+            ),
             inline=False,
         )
 
         embed4.add_field(
             name="Round 6",
-            value="11th May - 24th May 2026",
+            value=(
+                "11th May - 24th May 2026\n"
+                "RMC vs RDG\n"
+                "7PD vs 7DR\n"
+                "PG60 vs OFIN\n"
+                "ITHL vs 48th"
+            ),
             inline=False,
         )
 
         embed4.add_field(
             name="Round 7",
-            value="25th May - 7th June 2026",
+            value=(
+                "25th May - 7th June 2026\n"
+                "RMC vs 7DR\n"
+                "RDG vs OFIN\n"
+                "7PD vs 48th\n"
+                "PG60 vs ITHL"
+            ),
             inline=False,
         )
 
         # Image URLs for EMBED 4 (paste Discord CDN links here)
-        embed4_image_url = ""
-        embed4_thumbnail_url = "https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681"
+        embed4_image_url = "https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681"
+        embed4_thumbnail_url = ""
         if embed4_image_url:
             embed4.set_image(url=embed4_image_url)
         if embed4_thumbnail_url:
