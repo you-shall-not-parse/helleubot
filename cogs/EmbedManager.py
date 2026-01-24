@@ -69,7 +69,7 @@ class EmbedManager(commands.Cog):
         )
 
         embed1.add_field(
-            name="Structure",
+            name="🎯 Structure",
             value=(
                 "- Discord is **apply-to-join**\n"
                 "- **2–3 clan representatives** per clan (no other clan members)\n"
@@ -87,7 +87,7 @@ class EmbedManager(commands.Cog):
             inline=False,
         )
         embed1.add_field(
-            name="Scores & Fixtures",
+            name="📣 Scores & Fixtures",
             value=(
                 "- Fixtures, results, media and standings are provided **remotely** into your clan discord\n"
                 "- Scores submitted via button-based embeds\n"
@@ -123,7 +123,7 @@ class EmbedManager(commands.Cog):
             inline=False,
         )
         embed2.add_field(
-            name="Rounds & Scheduling",
+            name="🔢 Rounds & Scheduling",
             value=(
                 "- Each round has a **2-week window**\n"
                 "- Can be extended to **3 weeks** on request\n"
@@ -136,14 +136,14 @@ class EmbedManager(commands.Cog):
             value=(
                 "- One map per round — all teams play the same map\n"
                 "- Once used, the map leaves the pool\n"
-                "- Maps are chosen randomly from the pool and all maps except Stalingrad... are included\n"
+                "- Maps are chosen randomly from the pool and all maps except Stalingrad, Driel, Remagen, Smolensk are included\n"
                 "- Mid-point: spin-the-wheel\n"
                 "- Sides + server host decided by coin flip"
             ),
             inline=False,
         )
         embed2.add_field(
-            name="Scoring & Standings",
+            name="🏆 Scoring & Standings",
             value=(
                 "- Scoring is based solely on **points scored per match**\n"
                 "- League table ordered by **total points accumulated**"
@@ -151,14 +151,17 @@ class EmbedManager(commands.Cog):
             inline=False,
         )
         embed2.add_field(
-            name="Ruleset Highlights",
+            name="📜 Anti-Cheat and Game Time Provisions",
             value=(
-                "- No roster locking\n"
+                "- No roster locks\n"
                 "- Admin cam logs / player_ids may be requested\n"
-                "- No win condition within the first 30 minutes"
+                "- No win condition within the first 30 minutes\n"
+                "- Failure to comply may result in forfeiture of the match"
+                "- Accessble structures and glitches..."
             ),
             inline=False,
         )
+
 
         embed2.add_field(
             name="Links",
