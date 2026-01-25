@@ -38,7 +38,7 @@ CLAN_ROLE_IDS: dict[str, int] = {
 	"7PD": 1464763568506536000,
 	"PG60": 1464763651108896778,
 	"ITHL": 1464763753441788117,
-	"48th": 1464763805509619958,
+	"48th": 1462558355166986261,
 	"OFIN": 1464764074985390090,
 }
 
@@ -425,8 +425,8 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 			"1. Propose date/time (must be within the round window)\n"
 			"2. Agree/counter until locked\n"
 			"3. Propose team size (30-50, equal sizes)\n"
-			"4. Roll map and midpoint, then optional veto workflow\n"
-			"5. Randomly assign sides (Allies/Axis)\n"
+			"4. Roll map + midpoint (first roll by Clan A; then each clan can reroll up to 3 times)\n"
+			"5. Decide sides (once; must be done by the clan that did NOT do the last map roll)\n"
 			"6. Create the Discord event when ready!"
 		),
 		color=discord.Color.blurple(),
@@ -437,17 +437,30 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 
 	# Date/time
 	if s.agreed_datetime_utc:
-		ts = int(datetime.fromisoformat(s.agreed_datetime_utc).replace(tzinfo=timezone.utc).timestamp())
-		embed.add_field(name="Date/Time (Agreed)", value=f"<t:{ts}:F>", inline=False)
+		try:
+			ts = int(datetime.fromisoformat(s.agreed_datetime_utc).replace(tzinfo=timezone.utc).timestamp())
+			embed.add_field(name="Date/Time (Agreed)", value=f"<t:{ts}:F>", inline=False)
+		except Exception:
+			embed.add_field(name="Date/Time (Agreed)", value=s.agreed_datetime_utc, inline=False)
 	elif s.proposed_datetime_utc:
-		ts = int(datetime.fromisoformat(s.proposed_datetime_utc).replace(tzinfo=timezone.utc).timestamp())
-		embed.add_field(
-			name="Date/Time (Proposed)",
-			value=f"<t:{ts}:F> (by {s.proposed_datetime_by})",
-			inline=False,
-		)
+		try:
+			ts = int(datetime.fromisoformat(s.proposed_datetime_utc).replace(tzinfo=timezone.utc).timestamp())
+			embed.add_field(
+				name="Date/Time (Proposed)",
+				value=f"<t:{ts}:F> (by {s.proposed_datetime_by})",
+				inline=False,
+			)
+		except Exception:
+			embed.add_field(
+				name="Date/Time (Proposed)",
+				value=f"{s.proposed_datetime_utc} (by {s.proposed_datetime_by})",
+				inline=False,
+			)
 	else:
 		embed.add_field(name="Date/Time", value="Not proposed yet", inline=False)
+
+	dt_hist = _history_lines(s.datetime_history, kind="dt")
+	embed.add_field(name="Date/Time History", value=f"```\n{dt_hist}\n```", inline=False)
 
 	# Team sizes
 	if s.agreed_team_size:
@@ -461,24 +474,25 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 	else:
 		embed.add_field(name="Team Size", value="Not proposed yet", inline=False)
 
+	size_hist = _history_lines(s.team_size_history, kind="size")
+	embed.add_field(name="Team Size History", value=f"```\n{size_hist}\n```", inline=False)
+
 	# Map/midpoint
+	rerolls_line = f"Rerolls: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
+	last_roll = f"Last roll: {s.last_map_roll_by}" if s.last_map_roll_by else "Last roll: (none)"
 	if s.current_map and s.current_midpoint:
-		veto_a = f"{s.veto_count_a}/{VETO_LIMIT}"
-		veto_b = f"{s.veto_count_b}/{VETO_LIMIT}"
-		veto_line = f"Vetoes: {s.clan_a} {veto_a} • {s.clan_b} {veto_b}"
-		if s.pending_veto_by:
-			veto_line += f" • Pending veto request by {s.pending_veto_by}"
 		embed.add_field(
 			name="Map & Midpoint",
-			value=f"{s.current_map} — Midpoint: {s.current_midpoint}\n{veto_line}",
+			value=f"{s.current_map} — Midpoint: {s.current_midpoint}\n{rerolls_line}\n{last_roll}",
 			inline=False,
 		)
 	else:
-		embed.add_field(name="Map & Midpoint", value="Not rolled yet", inline=False)
+		embed.add_field(name="Map & Midpoint", value=f"Not rolled yet\n{rerolls_line}", inline=False)
 
 	# Sides
 	if s.sides_allies and s.sides_axis:
-		embed.add_field(name="Sides", value=f"Allies: {s.sides_allies}\nAxis: {s.sides_axis}", inline=False)
+		by = f" (by {s.sides_decided_by})" if s.sides_decided_by else ""
+		embed.add_field(name="Sides", value=f"Allies: {s.sides_allies}\nAxis: {s.sides_axis}{by}", inline=False)
 	else:
 		embed.add_field(name="Sides", value="Not decided yet", inline=False)
 
@@ -659,7 +673,17 @@ class CreateThreadButton(discord.ui.Button):
 
 		control_view = FixtureThreadView(thread_id=thread.id)
 		embed = _fixture_embed(s)
-		await thread.send(content=f"{requester_clan} vs {opponent_clan}", embed=embed, view=control_view)
+		msg = await thread.send(content=f"{requester_clan} vs {opponent_clan}", embed=embed, view=control_view)
+		s.control_message_id = msg.id
+		state = _load_state()
+		state["threads"][s.key] = _state_to_dict(s)
+		_save_state(state)
+		# Register the view so the buttons keep working after restarts.
+		try:
+			if hasattr(interaction.client, "add_view"):
+				interaction.client.add_view(control_view, message_id=msg.id)  # type: ignore[attr-defined]
+		except Exception:
+			pass
 
 		await interaction.followup.send(
 			f"Thread created: {thread.mention} (invited {invited} members)",
@@ -732,6 +756,13 @@ class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
 		s.proposed_datetime_utc = dt_utc.replace(tzinfo=timezone.utc).isoformat()
 		s.proposed_datetime_by = user_clan
 		s.agreed_datetime_utc = None
+		s.datetime_history.append(
+			{
+				"by": user_clan,
+				"action": "countered" if self.mode == "counter" else "proposed",
+				"dt": s.proposed_datetime_utc,
+			}
+		)
 
 		state["threads"][s.key] = _state_to_dict(s)
 		_save_state(state)
@@ -780,8 +811,12 @@ class TeamSizeModal(discord.ui.Modal, title="Propose Team Size"):
 			return
 
 		s.proposed_team_size = n
+		action = "proposed"
+		if s.proposed_team_size_by and s.proposed_team_size_by != user_clan:
+			action = "countered"
 		s.proposed_team_size_by = user_clan
 		s.agreed_team_size = None
+		s.team_size_history.append({"by": user_clan, "action": action, "size": n})
 
 		state["threads"][s.key] = _state_to_dict(s)
 		_save_state(state)
@@ -836,6 +871,9 @@ class FixtureThreadView(discord.ui.View):
 			await interaction.response.send_message("The other clan must accept/counter.", ephemeral=True)
 			return
 		s.agreed_datetime_utc = s.proposed_datetime_utc
+		s.datetime_history.append(
+			{"by": clan, "action": "accepted", "dt": s.agreed_datetime_utc}
+		)
 		s.proposed_datetime_utc = None
 		s.proposed_datetime_by = None
 		st = _load_state()
@@ -876,6 +914,7 @@ class FixtureThreadView(discord.ui.View):
 			await interaction.response.send_message("The other clan must accept/counter.", ephemeral=True)
 			return
 		s.agreed_team_size = s.proposed_team_size
+		s.team_size_history.append({"by": clan, "action": "accepted", "size": s.agreed_team_size})
 		s.proposed_team_size = None
 		s.proposed_team_size_by = None
 		st = _load_state()
@@ -884,7 +923,7 @@ class FixtureThreadView(discord.ui.View):
 		await interaction.response.send_message("Team size agreed.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
-	@discord.ui.button(label="Roll map+mid", style=discord.ButtonStyle.primary, custom_id="fixture:map_roll")
+	@discord.ui.button(label="Roll / Reroll map+mid", style=discord.ButtonStyle.primary, custom_id="fixture:map_roll")
 	async def roll_map(self, interaction: discord.Interaction, button: discord.ui.Button):
 		res = await self._require_member(interaction)
 		if not res:
@@ -901,8 +940,25 @@ class FixtureThreadView(discord.ui.View):
 				ephemeral=True,
 			)
 			return
-		if s.pending_veto_by:
-			await interaction.response.send_message("There is a pending veto request to resolve first.", ephemeral=True)
+		if s.scheduled_event_id:
+			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
+			return
+		if s.sides_allies or s.sides_axis:
+			await interaction.response.send_message("Sides are already decided; map rerolls are locked.", ephemeral=True)
+			return
+		# First roll is only allowed by the requester clan (Clan A) so they don't lose a reroll.
+		if not s.current_map and clan != s.clan_a:
+			await interaction.response.send_message(
+				f"Only {s.clan_a} can do the initial roll.",
+				ephemeral=True,
+			)
+			return
+		# After a roll exists, each clan can reroll up to the limit, and cannot reroll twice in a row.
+		if s.current_map and _reroll_count_for(s, clan) >= REROLL_LIMIT:
+			await interaction.response.send_message("You have used all rerolls.", ephemeral=True)
+			return
+		if s.last_map_roll_by and s.last_map_roll_by == clan:
+			await interaction.response.send_message("Wait for the other clan to roll next.", ephemeral=True)
 			return
 		try:
 			new_map, new_mid = _roll_map_and_midpoint()
@@ -915,96 +971,15 @@ class FixtureThreadView(discord.ui.View):
 		s.current_map = new_map
 		s.current_midpoint = new_mid
 		s.map_proposed_by = clan
+		s.last_map_roll_by = clan
+		if s.current_map:
+			# If this wasn't the first roll, consume a reroll.
+			if raw.get("current_map") is not None:
+				_inc_reroll(s, clan)
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await interaction.response.send_message("Rolled map/midpoint.", ephemeral=True)
-		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
-
-	@discord.ui.button(label="Request veto", style=discord.ButtonStyle.danger, custom_id="fixture:map_veto_request")
-	async def request_veto(self, interaction: discord.Interaction, button: discord.ui.Button):
-		res = await self._require_member(interaction)
-		if not res:
-			return
-		s, clan = res
-		if not s.current_map:
-			await interaction.response.send_message("Roll a map first.", ephemeral=True)
-			return
-		if s.pending_veto_by:
-			await interaction.response.send_message("There is already a pending veto request.", ephemeral=True)
-			return
-		if _veto_count_for(s, clan) >= VETO_LIMIT:
-			await interaction.response.send_message("You have used all vetoes.", ephemeral=True)
-			return
-		# Only allow the non-proposer to request veto (to match “one clan proposes the other agrees”).
-		if s.map_proposed_by and clan == s.map_proposed_by:
-			await interaction.response.send_message("The other clan must request the veto.", ephemeral=True)
-			return
-		s.pending_veto_by = clan
-		st = _load_state()
-		st["threads"][s.key] = _state_to_dict(s)
-		_save_state(st)
-		await interaction.response.send_message("Veto requested. Waiting for opponent to approve/reject.", ephemeral=True)
-		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
-
-	@discord.ui.button(label="Approve veto", style=discord.ButtonStyle.success, custom_id="fixture:map_veto_approve")
-	async def approve_veto(self, interaction: discord.Interaction, button: discord.ui.Button):
-		res = await self._require_member(interaction)
-		if not res:
-			return
-		s, clan = res
-		if not s.pending_veto_by:
-			await interaction.response.send_message("No pending veto.", ephemeral=True)
-			return
-		if clan == s.pending_veto_by:
-			await interaction.response.send_message("Opponent must approve/reject.", ephemeral=True)
-			return
-		_inc_veto(s, s.pending_veto_by)
-		s.pending_veto_by = None
-		# Reroll and set proposer to the clan that approved the veto (so it alternates smoothly).
-		if MAP_POOL:
-			issues = _midpoints_config_issues()
-			if issues:
-				await interaction.response.send_message(
-					"Midpoint config is incomplete. Each map must have exactly 3 midpoints in MIDPOINTS_BY_MAP. Missing/invalid: "
-					+ ", ".join(issues),
-					ephemeral=True,
-				)
-				return
-			try:
-				new_map, new_mid = _roll_map_and_midpoint()
-			except ValueError:
-				await interaction.response.send_message(
-					"No valid maps to roll: every map in MAP_POOL must have exactly 3 midpoints configured.",
-					ephemeral=True,
-				)
-				return
-			s.current_map = new_map
-			s.current_midpoint = new_mid
-		s.map_proposed_by = clan
-		st = _load_state()
-		st["threads"][s.key] = _state_to_dict(s)
-		_save_state(st)
-		await interaction.response.send_message("Veto approved and rerolled.", ephemeral=True)
-		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
-
-	@discord.ui.button(label="Reject veto", style=discord.ButtonStyle.secondary, custom_id="fixture:map_veto_reject")
-	async def reject_veto(self, interaction: discord.Interaction, button: discord.ui.Button):
-		res = await self._require_member(interaction)
-		if not res:
-			return
-		s, clan = res
-		if not s.pending_veto_by:
-			await interaction.response.send_message("No pending veto.", ephemeral=True)
-			return
-		if clan == s.pending_veto_by:
-			await interaction.response.send_message("Opponent must approve/reject.", ephemeral=True)
-			return
-		s.pending_veto_by = None
-		st = _load_state()
-		st["threads"][s.key] = _state_to_dict(s)
-		_save_state(st)
-		await interaction.response.send_message("Veto rejected. Map stands.", ephemeral=True)
+		await interaction.response.send_message("Map/midpoint updated.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Decide sides", style=discord.ButtonStyle.primary, custom_id="fixture:sides")
@@ -1012,11 +987,24 @@ class FixtureThreadView(discord.ui.View):
 		res = await self._require_member(interaction)
 		if not res:
 			return
-		s, _ = res
+		s, clan = res
+		if s.scheduled_event_id:
+			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
+			return
+		if not (s.current_map and s.current_midpoint):
+			await interaction.response.send_message("Roll map/midpoint first.", ephemeral=True)
+			return
+		if s.sides_allies or s.sides_axis:
+			await interaction.response.send_message("Sides are already decided.", ephemeral=True)
+			return
+		if s.last_map_roll_by and clan == s.last_map_roll_by:
+			await interaction.response.send_message("The other clan must decide sides.", ephemeral=True)
+			return
 		if random.choice([True, False]):
 			s.sides_allies, s.sides_axis = s.clan_a, s.clan_b
 		else:
 			s.sides_allies, s.sides_axis = s.clan_b, s.clan_a
+		s.sides_decided_by = clan
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
@@ -1079,10 +1067,15 @@ class FixtureThreadView(discord.ui.View):
 				if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
 					await interaction.followup.send("Configured event channel is invalid.", ephemeral=True)
 					return
-				ev = await guild.create_scheduled_event(
+					ev = await guild.create_scheduled_event(
 					name=_fixture_title(s),
 					start_time=start_dt,
 					end_time=end_dt,
+					entity_type=(
+						discord.EntityType.stage_instance
+						if isinstance(channel, discord.StageChannel)
+						else discord.EntityType.voice
+					),
 					channel=channel,
 					description=desc,
 				)
@@ -1091,6 +1084,7 @@ class FixtureThreadView(discord.ui.View):
 					name=_fixture_title(s),
 					start_time=start_dt,
 					end_time=end_dt,
+					entity_type=discord.EntityType.external,
 					location="Hell Let Loose",
 					description=desc,
 				)
@@ -1132,7 +1126,7 @@ class FixtureThreadView(discord.ui.View):
 
 
 async def _refresh_thread(client: discord.Client, thread_id: int) -> None:
-	"""Repost a fresh control message with updated embed in the thread."""
+	"""Refresh (edit) the single control message embed in the thread."""
 
 	channel = client.get_channel(thread_id)
 	if not isinstance(channel, discord.Thread):
@@ -1150,8 +1144,33 @@ async def _refresh_thread(client: discord.Client, thread_id: int) -> None:
 	s = _dict_to_state(raw)
 	embed = _fixture_embed(s)
 	view = FixtureThreadView(thread_id=thread_id)
+
+	msg: Optional[discord.Message] = None
+	if s.control_message_id:
+		try:
+			msg = await channel.fetch_message(int(s.control_message_id))
+		except Exception:
+			msg = None
+
 	try:
-		await channel.send(embed=embed, view=view)
+		if msg is None:
+			new_msg = await channel.send(embed=embed, view=view)
+			s.control_message_id = new_msg.id
+			state["threads"][s.key] = _state_to_dict(s)
+			_save_state(state)
+			try:
+				if hasattr(client, "add_view"):
+					client.add_view(view, message_id=new_msg.id)  # type: ignore[attr-defined]
+			except Exception:
+				pass
+			return
+
+		await msg.edit(embed=embed, view=view)
+		try:
+			if hasattr(client, "add_view"):
+				client.add_view(view, message_id=msg.id)  # type: ignore[attr-defined]
+		except Exception:
+			pass
 	except Exception:
 		return
 
@@ -1189,8 +1208,8 @@ class EventOrganiser(commands.Cog):
 			    "1. Propose date/time (must be within the round window)\n"
 			    "2. Agree/counter until locked\n"
 			    "3. Propose team size (30-50, equal sizes)\n"
-			    "4. Roll map and midpoint, then optional veto workflow\n"
-			    "5. Randomly assign sides (Allies/Axis)\n"
+			    "4. Roll map + midpoint (first roll by Clan A; then each clan can reroll up to 3 times)\n"
+			    "5. Decide sides (once)\n"
 			    "6. Create the Discord event and it'll go in the calendar!"
 			),
 			color=discord.Color.blurple(),
@@ -1219,7 +1238,7 @@ class EventOrganiser(commands.Cog):
 		if not isinstance(threads, dict):
 			return
 
-		# For each known thread, post a fresh control message so buttons work after restarts.
+		# For each known thread, refresh the existing control message and register persistent views.
 		for thread_id_str in list(threads.keys()):
 			try:
 				thread_id = int(thread_id_str)
