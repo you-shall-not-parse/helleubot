@@ -244,6 +244,10 @@ class FixtureState:
 	reroll_count_b: int = 0
 	last_map_roll_by: Optional[str] = None
 
+	# Sides rerolls (separate from map/midpoint mix-ups)
+	sides_reroll_count_a: int = 0
+	sides_reroll_count_b: int = 0
+
 	# Sides negotiation
 	proposed_sides_allies: Optional[str] = None
 	proposed_sides_axis: Optional[str] = None
@@ -291,6 +295,8 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"reroll_count_a": s.reroll_count_a,
 		"reroll_count_b": s.reroll_count_b,
 		"last_map_roll_by": s.last_map_roll_by,
+		"sides_reroll_count_a": s.sides_reroll_count_a,
+		"sides_reroll_count_b": s.sides_reroll_count_b,
 		"proposed_sides_allies": s.proposed_sides_allies,
 		"proposed_sides_axis": s.proposed_sides_axis,
 		"proposed_sides_by": s.proposed_sides_by,
@@ -330,6 +336,8 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		reroll_count_a=int(d.get("reroll_count_a", 0)),
 		reroll_count_b=int(d.get("reroll_count_b", 0)),
 		last_map_roll_by=d.get("last_map_roll_by"),
+		sides_reroll_count_a=int(d.get("sides_reroll_count_a", 0)),
+		sides_reroll_count_b=int(d.get("sides_reroll_count_b", 0)),
 		proposed_sides_allies=d.get("proposed_sides_allies"),
 		proposed_sides_axis=d.get("proposed_sides_axis"),
 		proposed_sides_by=d.get("proposed_sides_by"),
@@ -371,7 +379,8 @@ def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None
 		parts.append(f"Axis: {s.sides_axis}")
 	if s.server_host:
 		parts.append(f"Server host: {s.server_host} Server")
-	parts.append(f"Rerolls used: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}")
+	parts.append(f"Map rerolls used: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}")
+	parts.append(f"Sides rerolls used: {s.clan_a} {s.sides_reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.sides_reroll_count_b}/{REROLL_LIMIT}")
 	parts.append(f"Thread: <#{s.thread_id}>")
 	if event_url:
 		parts.append(f"Event: {event_url}")
@@ -407,6 +416,17 @@ def _inc_reroll(s: FixtureState, clan: str) -> None:
 		s.reroll_count_a += 1
 	else:
 		s.reroll_count_b += 1
+
+
+def _sides_reroll_count_for(s: FixtureState, clan: str) -> int:
+	return s.sides_reroll_count_a if clan == s.clan_a else s.sides_reroll_count_b
+
+
+def _inc_sides_reroll(s: FixtureState, clan: str) -> None:
+	if clan == s.clan_a:
+		s.sides_reroll_count_a += 1
+	else:
+		s.sides_reroll_count_b += 1
 
 
 def _format_dt_short(dt_iso: str) -> str:
@@ -475,13 +495,14 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 	embed.add_field(name="Team Size", value=f"```\n{size_hist}\n```", inline=False)
 
 	# Map/midpoint (status + history)
-	rerolls_line = f"Rerolls: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
+	rerolls_line = f"Map rerolls: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
 	map_hist = _history_lines(s.map_history, kind="map")
 	embed.add_field(name="Map & Midpoint", value=f"```\n{rerolls_line}\n{map_hist}\n```", inline=False)
 
 	# Sides (status + history)
+	sides_rerolls_line = f"Sides rerolls: {s.clan_a} {s.sides_reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.sides_reroll_count_b}/{REROLL_LIMIT}"
 	sides_hist = _history_lines(s.sides_history, kind="sides")
-	embed.add_field(name="Sides", value=f"```\n{sides_hist}\n```", inline=False)
+	embed.add_field(name="Sides", value=f"```\n{sides_rerolls_line}\n{sides_hist}\n```", inline=False)
 
 	if s.scheduled_event_id:
 		embed.add_field(name="Discord Event", value=f"Created (ID: {s.scheduled_event_id})", inline=False)
@@ -1008,6 +1029,12 @@ class FixtureThreadView(discord.ui.View):
 		if s.sides_allies or s.sides_axis:
 			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
 			return
+		# Each clan may request up to REROLL_LIMIT rerolls before sides are accepted/locked.
+		# The initial coin flip doesn't consume a reroll; subsequent flips do.
+		is_first_proposal = s.proposed_sides_allies is None
+		if not is_first_proposal and _sides_reroll_count_for(s, clan) >= REROLL_LIMIT:
+			await interaction.response.send_message("You have used all sides rerolls.", ephemeral=True)
+			return
 		if random.choice([True, False]):
 			allies, axis = s.clan_a, s.clan_b
 		else:
@@ -1018,6 +1045,8 @@ class FixtureThreadView(discord.ui.View):
 		s.proposed_sides_by = clan
 		s.proposed_server_host = host
 		s.sides_history.append({"by": clan, "action": "proposed", "allies": allies, "axis": axis, "host": host})
+		if not is_first_proposal:
+			_inc_sides_reroll(s, clan)
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
@@ -1100,13 +1129,13 @@ class FixtureThreadView(discord.ui.View):
 		end_dt = start_dt + timedelta(hours=2)
 
 		desc = (
-			f"**Round:** {s.round_no} ({_format_round_window(s.round_no)})\n"
-			f"**Team size:** {s.agreed_team_size} vs {s.agreed_team_size}\n"
-			f"**Map:** {s.current_map}\n"
-			f"**Midpoint:** {s.current_midpoint}\n"
-			f"**Allies:** {s.sides_allies}\n"
-			f"**Axis:** {s.sides_axis}\n"
-			f"**Thread:** <#{s.thread_id}>"
+			f"Round: {s.round_no} ({_format_round_window(s.round_no)})\n"
+			f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}\n"
+			f"Map: {s.current_map}\n"
+			f"Midpoint: {s.current_midpoint}\n"
+			f"Allies: {s.sides_allies}\n"
+			f"Axis: {s.sides_axis}\n"
+			f"Thread: <#{s.thread_id}>"
 		)
 
 		try:
