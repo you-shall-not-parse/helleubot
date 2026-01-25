@@ -493,7 +493,7 @@ class EventDisplayCog(commands.Cog):
             A Discord embed with event information
         """
         embed = discord.Embed(
-            title=f"📅 Upcoming Events for {guild.name}",
+            title=f"📅 Organised Fixtures",
             color=EMBED_COLOR,
             timestamp=datetime.utcnow()
         )
