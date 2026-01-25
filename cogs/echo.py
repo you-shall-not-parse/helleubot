@@ -22,6 +22,7 @@ def _has_echo_role(interaction: discord.Interaction) -> bool:
 class Echo(commands.Cog):
 	def __init__(self, bot: commands.Bot):
 		self.bot = bot
+		self._did_guild_sync = False
 
 	@app_commands.guilds(TARGET_GUILD)
 	@app_commands.guild_only()
@@ -50,8 +51,11 @@ class Echo(commands.Cog):
 	@commands.Cog.listener()
 	async def on_ready(self):
 		# Ensure the guild-scoped command is registered quickly.
+		if self._did_guild_sync:
+			return
 		try:
 			await self.bot.tree.sync(guild=TARGET_GUILD)
+			self._did_guild_sync = True
 			print(f"[Echo] Commands synced to guild {ECHO_GUILD_ID}.")
 		except Exception as e:
 			print(f"[Echo] Sync error: {e}")

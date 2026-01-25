@@ -172,7 +172,7 @@ class EmbedManager(commands.Cog):
             inline=False,
         )
         
-        embed2.add_field(
+        embed1.add_field(
             name="Links",
             value=(
                 "League support/contact: <#1462388616025210952>"
