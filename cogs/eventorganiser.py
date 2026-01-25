@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import random
+import secrets
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -207,13 +208,29 @@ def _midpoints_config_issues() -> list[str]:
 	return issues
 
 
-def _roll_map_and_midpoint() -> tuple[str, str]:
+def _roll_map_and_midpoint(*, avoid: Optional[tuple[str, str]] = None) -> tuple[str, str]:
+	"""Roll a (map, midpoint) pair.
+
+	If avoid is provided and there are alternative outcomes available, it will not repeat
+	that exact (map, midpoint) pair.
+	"""
 	valid_maps = [m for m in MAP_POOL if len(_midpoints_for_map(m)) == 3]
 	if not valid_maps:
 		raise ValueError("No maps have exactly 3 configured midpoints")
-	map_name = random.choice(valid_maps)
-	midpoint = random.choice(_midpoints_for_map(map_name))
-	return map_name, midpoint
+
+	# Build all possible (map, midpoint) outcomes.
+	outcomes: list[tuple[str, str]] = []
+	for map_name in valid_maps:
+		for midpoint in _midpoints_for_map(map_name):
+			outcomes.append((map_name, midpoint))
+
+	if not outcomes:
+		raise ValueError("No maps have exactly 3 configured midpoints")
+
+	if avoid is not None and len(outcomes) > 1:
+		outcomes = [x for x in outcomes if x != avoid] or outcomes
+
+	return secrets.choice(outcomes)
 
 
 @dataclass
@@ -1001,7 +1018,12 @@ class FixtureThreadView(discord.ui.View):
 			await interaction.response.send_message("You have used all mix-ups.", ephemeral=True)
 			return
 		try:
-			new_map, new_mid = _roll_map_and_midpoint()
+			avoid = None
+			if s.proposed_map and s.proposed_midpoint:
+				avoid = (s.proposed_map, s.proposed_midpoint)
+			elif s.current_map and s.current_midpoint:
+				avoid = (s.current_map, s.current_midpoint)
+			new_map, new_mid = _roll_map_and_midpoint(avoid=avoid)
 		except ValueError:
 			await interaction.response.send_message(
 				"No valid maps to roll: every map in MAP_POOL must have exactly 3 midpoints configured.",
@@ -1075,11 +1097,22 @@ class FixtureThreadView(discord.ui.View):
 		if not is_first_proposal and _sides_reroll_count_for(s, clan) >= REROLL_LIMIT:
 			await interaction.response.send_message("You have used all sides rerolls.", ephemeral=True)
 			return
-		if random.choice([True, False]):
-			allies, axis = s.clan_a, s.clan_b
-		else:
-			allies, axis = s.clan_b, s.clan_a
-		host = random.choice([s.clan_a, s.clan_b])
+		# Avoid repeating the exact same (allies, axis, host) proposal when alternatives exist.
+		last = s.sides_history[-1] if s.sides_history else None
+		avoid_allies = str(last.get("allies")) if isinstance(last, dict) and last.get("allies") else None
+		avoid_axis = str(last.get("axis")) if isinstance(last, dict) and last.get("axis") else None
+		avoid_host = str(last.get("host")) if isinstance(last, dict) and last.get("host") else None
+		avoid = (avoid_allies, avoid_axis, avoid_host) if (avoid_allies and avoid_axis and avoid_host) else None
+
+		possible: list[tuple[str, str, str]] = [
+			(s.clan_a, s.clan_b, s.clan_a),
+			(s.clan_a, s.clan_b, s.clan_b),
+			(s.clan_b, s.clan_a, s.clan_a),
+			(s.clan_b, s.clan_a, s.clan_b),
+		]
+		if avoid is not None and len(possible) > 1:
+			possible = [x for x in possible if x != avoid] or possible
+		allies, axis, host = secrets.choice(possible)
 		s.proposed_sides_allies = allies
 		s.proposed_sides_axis = axis
 		s.proposed_sides_by = clan

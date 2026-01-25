@@ -550,7 +550,7 @@ class EventDisplayCog(commands.Cog):
                     if all_channel_ids:
                         # Use the first channel ID as sign-up channel
                         channel_id = int(all_channel_ids[0])
-                        field_value += f"\n🧵**Organiser Thread:** <#{channel_id}>"
+                        field_value += f"\n**Organiser Thread:** <#{channel_id}>"
                         
                         # Show rest of description (excluding channel mentions and URLs)
                         description = re.sub(r'<#\d+>', '', event.description)
