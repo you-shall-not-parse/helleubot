@@ -672,39 +672,147 @@ class ScoreboardCog(commands.Cog):
 			return
 
 		message_id = self.store.data.get("leaderboard_message_id")
-
-		last = self.store.data.get("last_result")
-		if isinstance(last, dict):
-			latest_line = f"Latest: {last.get('a_name','')} {last.get('a_score',0)} - {last.get('b_score',0)} {last.get('b_name','')}"
-		else:
-			latest_line = "Latest: (no confirmed results yet)"
-
-		leaderboard_text = _build_leaderboard_text(self.store.data.get("clan_stats", {}))
-		content = f"{latest_line}\n\n{leaderboard_text}"
-
-		file: Optional[discord.File] = None
-		if os.path.exists(IMAGE_TEMPLATE_PATH):
-			file = discord.File(IMAGE_TEMPLATE_PATH, filename=os.path.basename(IMAGE_TEMPLATE_PATH))
-		else:
-			log.warning("Scoreboard template image not found at %s", IMAGE_TEMPLATE_PATH)
+		image_path = await self._render_scoreboard_image()
+		file = discord.File(image_path, filename=os.path.basename(image_path))
+		content = ""  # keep the channel clean; text is drawn on the image
 
 		if message_id:
 			try:
 				msg = await channel.fetch_message(int(message_id))
-				if file is not None:
-					await msg.edit(content=content, embed=None, attachments=[], files=[file])
-				else:
-					await msg.edit(content=content, embed=None, attachments=[])
+				await msg.edit(content=content, embed=None, attachments=[], files=[file])
 				return
 			except Exception:
 				log.warning("Could not edit existing leaderboard message; re-sending")
 
-		if file is not None:
-			msg = await channel.send(content=content, file=file)
-		else:
-			msg = await channel.send(content=content)
+		msg = await channel.send(content=content, file=file)
 		self.store.data["leaderboard_message_id"] = msg.id
 		await self.store.save()
+
+	async def _render_scoreboard_image(self) -> str:
+		"""Render the scoreboard onto the provided template image."""
+		from PIL import Image, ImageDraw, ImageFont  # pillow
+
+		if os.path.exists(IMAGE_TEMPLATE_PATH):
+			base = Image.open(IMAGE_TEMPLATE_PATH).convert("RGBA")
+		else:
+			# Fallback so the bot keeps working even if the template is missing.
+			log.warning("Scoreboard template image not found at %s", IMAGE_TEMPLATE_PATH)
+			base = Image.new("RGBA", (1080, 1920), (16, 18, 24, 255))
+
+		w, h = base.size
+		overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+		draw = ImageDraw.Draw(overlay)
+
+		def _clamp(n: int, lo: int, hi: int) -> int:
+			return max(lo, min(hi, n))
+
+		# Font sizes scale with image size; tweak if your template has fixed areas.
+		font_title_size = _clamp(int(h * 0.045), 28, 84)
+		font_big_size = _clamp(int(h * 0.060), 34, 110)
+		font_med_size = _clamp(int(h * 0.034), 22, 60)
+		font_small_size = _clamp(int(h * 0.026), 16, 46)
+		try:
+			font_title = ImageFont.truetype(FONT_PATH, font_title_size)
+			font_big = ImageFont.truetype(FONT_PATH, font_big_size)
+			font_med = ImageFont.truetype(FONT_PATH, font_med_size)
+			font_small = ImageFont.truetype(FONT_PATH, font_small_size)
+		except Exception:
+			font_title = ImageFont.load_default()
+			font_big = ImageFont.load_default()
+			font_med = ImageFont.load_default()
+			font_small = ImageFont.load_default()
+
+		margin = int(w * 0.06)
+		# Areas (relative). Adjust these ratios if your template has different spacing.
+		result_top = int(h * 0.08)
+		result_bottom = int(h * 0.32)
+		table_top = int(h * 0.40)
+		table_bottom = int(h * 0.94)
+
+		# Semi-transparent panels for readability
+		panel_fill = (10, 12, 16, 150)
+		panel_outline = (230, 230, 240, 90)
+		draw.rounded_rectangle(
+			(margin, result_top, w - margin, result_bottom),
+			radius=24,
+			fill=panel_fill,
+			outline=panel_outline,
+			width=3,
+		)
+		draw.rounded_rectangle(
+			(margin, table_top, w - margin, table_bottom),
+			radius=24,
+			fill=panel_fill,
+			outline=panel_outline,
+			width=3,
+		)
+
+		# Latest result text
+		last = self.store.data.get("last_result")
+		if isinstance(last, dict):
+			result_text = f"{last.get('a_name','')} {last.get('a_score',0)} - {last.get('b_score',0)} {last.get('b_name','')}".strip()
+		else:
+			result_text = "No results yet"
+		draw.text((margin + 24, result_top + 18), "RESULT", font=font_title, fill=(245, 245, 250, 220))
+		bbox = draw.textbbox((0, 0), result_text, font=font_big)
+		text_w = bbox[2] - bbox[0]
+		text_h = bbox[3] - bbox[1]
+		cx = (w - text_w) // 2
+		cy = result_top + ((result_bottom - result_top - text_h) // 2) + 10
+		draw.text((cx, cy), result_text, font=font_big, fill=(255, 255, 255, 255))
+
+		# Leaderboard table
+		draw.text((margin + 24, table_top + 18), "LEADERBOARD", font=font_title, fill=(245, 245, 250, 220))
+		rows = _sorted_leaderboard_rows(self.store.data.get("clan_stats", {}))
+		max_rows = 16
+		usable_top = table_top + int(h * 0.08)
+		usable_bottom = table_bottom - 24
+		row_h = max(34, int((usable_bottom - usable_top) / (max_rows + 2)))
+
+		col_idx = margin + 24
+		col_name = margin + int(w * 0.12)
+		col_score = w - margin - int(w * 0.30)
+		col_w = w - margin - int(w * 0.18)
+		col_l = w - margin - int(w * 0.08)
+
+		header_y = usable_top
+		draw.text((col_idx, header_y), "#", font=font_med, fill=(220, 225, 235, 230))
+		draw.text((col_name, header_y), "Clan", font=font_med, fill=(220, 225, 235, 230))
+		draw.text((col_score, header_y), "Score", font=font_med, fill=(220, 225, 235, 230))
+		draw.text((col_w, header_y), "W", font=font_med, fill=(220, 225, 235, 230))
+		draw.text((col_l, header_y), "L", font=font_med, fill=(220, 225, 235, 230))
+		draw.line(
+			(margin + 18, header_y + row_h - 10, w - margin - 18, header_y + row_h - 10),
+			fill=(255, 255, 255, 90),
+			width=2,
+		)
+
+		for i, r in enumerate(rows[:max_rows], start=1):
+			y = header_y + row_h + (i - 1) * row_h
+			if y + row_h > usable_bottom:
+				break
+			# subtle zebra row
+			if i % 2 == 0:
+				draw.rounded_rectangle(
+					(margin + 18, y - 6, w - margin - 18, y + row_h - 6),
+					radius=14,
+					fill=(255, 255, 255, 18),
+				)
+
+			name = str(r["name"])
+			# keep names from spilling
+			if len(name) > 18:
+				name = name[:17] + "…"
+			draw.text((col_idx, y), str(i), font=font_small, fill=(255, 255, 255, 235))
+			draw.text((col_name, y), name, font=font_small, fill=(255, 255, 255, 235))
+			draw.text((col_score, y), str(int(r["score"])), font=font_small, fill=(255, 255, 255, 235))
+			draw.text((col_w, y), str(int(r["w"])), font=font_small, fill=(255, 255, 255, 235))
+			draw.text((col_l, y), str(int(r["l"])), font=font_small, fill=(255, 255, 255, 235))
+
+		rendered = Image.alpha_composite(base, overlay)
+		out_path = data_path("scoreboard_rendered.png")
+		rendered.save(out_path, format="PNG")
+		return out_path
 
 	async def post_validation_message(self, guild: discord.Guild, match: PendingMatch) -> Optional[discord.Message]:
 		if VALIDATION_CHANNEL_ID == 0:
