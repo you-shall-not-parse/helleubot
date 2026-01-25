@@ -171,6 +171,14 @@ class EmbedManager(commands.Cog):
             ),
             inline=False,
         )
+        
+        embed2.add_field(
+            name="Links",
+            value=(
+                "League support/contact: <#1462388616025210952>"
+            ),
+            inline=False,
+        )
 
         # Image URLs for EMBED 1 (paste Discord CDN links here)
         embed1_image_url = "https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681"
@@ -195,7 +203,6 @@ class EmbedManager(commands.Cog):
             name="🔢 Rounds & Scheduling",
             value=(
                 "- Each round has a **2-week window**\n"
-                "- Can be extended to **3 weeks** on request\n"
                 "- Fixture player numbers between **30–50 players** as agreed with opponent in <#1462382488784470181>"
             ),
             inline=False,
@@ -214,9 +221,9 @@ class EmbedManager(commands.Cog):
         embed2.add_field(
             name="🏆 Scoring & Standings",
             value=(
-                "- Scoring is based solely on **points scored per match**\n"
-                "- League table ordered by **total points accumulated\n**"
-                "- The team with the better W/L record will be awared the higher seed, if this is tied then a final match shall be played to determine the first-place seed"
+                "- Scoring is based solely on **objectives scored per match**\n"
+                "- League table ordered by **total objectives accumulated**\n"
+                "- The team with the better W/L record will be awarded the higher seed, if this is tied then a final match shall be played to determine the first-place seed"
             ),
             inline=False,
         )
@@ -229,8 +236,8 @@ class EmbedManager(commands.Cog):
                 "- Deliberate clipping inside an asset that prevents you being shot but allows you to shoot out is prohibited, this does not include terrain clipping as a result of natural gameplay\n"
                 "- The use of rooftops is permitted\n"
                 "- The use of cronus/XIM or other controller emulator is prohibited\n"
-                "- Hired guns are not permitted however coalition teams may be formed and fielded\n"
-                "- Players transferred between clans competing in the current season are not permitted to play for their new clan until the following season\n"
+                "- Hired guns are prohibited however coalition teams may be formed and fielded\n"
+                "- Players transferred between clans competing in the current season are banned from playing for their new clan until the following season\n"
                 "- Footage and consequence is subject to review by league admins if submitted as part of a protest\n"
             ),
             inline=False,
@@ -247,10 +254,10 @@ class EmbedManager(commands.Cog):
                 "   - Both must stay on one assigned gun; you cannot switch guns.\n"
                 "   - Both cannot leave the gun or attack enemies.\n"
                 "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
-                "- Failure to comply may result in forfeiture of the match and points deducted\n"
-                "- SPA is prohibited unless otherwise explicitly agreed and driving (only) within the HQ permitted to move it\n"
+                "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ permitted to move it\n"
                 "- Commander artillery is prohibited\n" 
-                "- Panther tank is prohibited unless otherwise explicitly agreed and driving (only) within the HQ permitted to move it"
+                "- Panther tank is prohibited unless otherwise explicitly agreed by both teams, driving (only) within the HQ permitted to move it"
+                "- Failure to comply may result in forfeiture of the match and/or points deducted\n"
             ),
             inline=False,
         )
@@ -259,14 +266,7 @@ class EmbedManager(commands.Cog):
             value=(
                 "- Nodes must be built in an HQ sector that is away from artillery and vehicle spawns\n"
                 "- Nodes cannot be destroyed or dismantled by the opposing team\n"
-            ),
-            inline=False,
-        )
-
-        embed2.add_field(
-            name="Links",
-            value=(
-                "League support/contact: <#1462388616025210952>"
+                "- Failure to comply may result in forfeiture of the match and/or points deducted\n"
             ),
             inline=False,
         )
