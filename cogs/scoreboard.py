@@ -18,6 +18,9 @@ from data_paths import data_path
 # Config (fill these in)
 # -----------------------------
 
+# Role allowed to use admin scoreboard edit commands
+ADMIN_ROLE_ID: int = 0
+
 # Channel where the main "Submit Scores" embed is posted
 SCOREBOARD_CHANNEL_ID: int = 1462387812815998997
 
@@ -78,6 +81,25 @@ def _parse_score(text: str) -> tuple[int, int]:
 	return a, b
 
 
+def _score_options() -> list[tuple[int, int]]:
+	# From the submitter clan's perspective
+	return [(5, 0), (4, 1), (3, 2), (2, 3), (1, 4), (0, 5)]
+
+
+def _is_admin_member(member: discord.Member) -> bool:
+	if member.guild_permissions.administrator:
+		return True
+	return any(r.id == ADMIN_ROLE_ID for r in member.roles)
+
+
+def _admin_app_command_check(interaction: discord.Interaction) -> bool:
+	# Safe check wrapper for app_commands decorators.
+	cog = interaction.client.get_cog("ScoreboardCog")
+	if cog is None:
+		return False
+	return cog._admin_check(interaction)  # type: ignore[no-any-return]
+
+
 def _role_name_from_id(role_id: int) -> str:
 	for name, rid in CLAN_ROLES.items():
 		if rid == role_id:
@@ -100,8 +122,9 @@ def _build_leaderboard_embed(stats: dict[str, Any]) -> discord.Embed:
 		maps_against = int(s.get("maps_against", 0))
 		diff = maps_for - maps_against
 		played = int(s.get("played", w + l))
-		# Primary: wins, then diff, then maps_for, then fewer losses, then fewer played
-		return (w, diff, maps_for, -l, -played)
+		score = maps_for
+		# Primary: score (maps won), then diff, then wins, then fewer losses, then fewer played
+		return (score, diff, w, -l, -played)
 
 	rows.sort(key=sort_key, reverse=True)
 
@@ -112,7 +135,6 @@ def _build_leaderboard_embed(stats: dict[str, Any]) -> discord.Embed:
 		l = int(s.get("l", 0))
 		played = int(s.get("played", w + l))
 		maps_for = int(s.get("maps_for", 0))
-		# "Score" requested as accumulative score; we use total maps won.
 		score = maps_for
 		display_name = (name[:19] + "…") if len(name) > 20 else name
 		lines.append(f"{idx:<3}{display_name:<22}{w:>3}{l:>3}{played:>4}{score:>7}")
@@ -124,6 +146,29 @@ def _build_leaderboard_embed(stats: dict[str, Any]) -> discord.Embed:
 	)
 	embed.set_footer(text="Score = total maps won")
 	return embed
+
+
+def _sorted_leaderboard_rows(stats: dict[str, Any]) -> list[dict[str, Any]]:
+	rows: list[dict[str, Any]] = []
+	for rid_str, s in stats.items():
+		name = str(s.get("name") or _role_name_from_id(int(rid_str)))
+		w = int(s.get("w", 0))
+		l = int(s.get("l", 0))
+		maps_for = int(s.get("maps_for", 0))
+		maps_against = int(s.get("maps_against", 0))
+		diff = maps_for - maps_against
+		rows.append(
+			{
+				"name": name,
+				"score": maps_for,
+				"w": w,
+				"l": l,
+				"diff": diff,
+			},
+		)
+
+	rows.sort(key=lambda r: (r["score"], r["diff"], r["w"], -r["l"], r["name"].lower()), reverse=True)
+	return rows
 
 
 def _build_scoreboard_embed() -> discord.Embed:
@@ -199,6 +244,7 @@ class ScoreboardStore:
 
 			self.data.setdefault("scoreboard_message_id", None)
 			self.data.setdefault("leaderboard_message_id", None)
+			self.data.setdefault("last_result", None)
 			self.data.setdefault("clan_stats", {})
 			self.data.setdefault("pending_matches", {})  # match_id -> match dict
 			self.data.setdefault("pending_by_validation_message", {})  # message_id(str) -> match_id
@@ -324,6 +370,14 @@ class ScoreboardStore:
 				a["l"] = int(a.get("l", 0)) + 1
 
 			self.data["clan_stats"] = stats
+			self.data["last_result"] = {
+				"match_id": match.match_id,
+				"a_name": _role_name_from_id(match.submitter_clan_role_id),
+				"b_name": _role_name_from_id(match.opponent_clan_role_id),
+				"a_score": match.submitter_score,
+				"b_score": match.opponent_score,
+				"at": _utcnow_iso(),
+			}
 
 		await self.save()
 		return match
@@ -355,44 +409,86 @@ class OpponentSelect(discord.ui.Select):
 	async def callback(self, interaction: discord.Interaction):
 		view: "SubmitFlowView" = self.view  # type: ignore[assignment]
 		view.opponent_clan_role_id = int(self.values[0])
-		for child in view.children:
-			if isinstance(child, discord.ui.Button) and child.custom_id == "scoreboard:open_score_modal":
-				child.disabled = False
+		view._refresh_score_options()
 		await interaction.response.edit_message(view=view)
 
 
-class ScoreModal(discord.ui.Modal, title="Submit match score"):
-	score = discord.ui.TextInput(
-		label="Score (adds to 5)",
-		placeholder="Example: 3-2, 4-1, 5-0",
-		min_length=3,
-		max_length=10,
-		required=True,
-	)
+class ScoreSelect(discord.ui.Select):
+	def __init__(self, submitter_clan_role_id: int):
+		self.submitter_clan_role_id = submitter_clan_role_id
+		super().__init__(
+			placeholder="Select the match score…",
+			min_values=1,
+			max_values=1,
+			options=[discord.SelectOption(label="Pick an opponent first", value="0-5")],
+			disabled=True,
+			custom_id="scoreboard:score_select",
+		)
 
-	def __init__(self, parent_view: "SubmitFlowView"):
+	def set_matchup(self, opponent_clan_role_id: Optional[int]) -> None:
+		if opponent_clan_role_id is None:
+			self.disabled = True
+			self.options = [discord.SelectOption(label="Pick an opponent first", value="0-5")]
+			return
+		a_name = _role_name_from_id(self.submitter_clan_role_id)
+		b_name = _role_name_from_id(opponent_clan_role_id)
+		self.disabled = False
+		self.options = [
+			discord.SelectOption(
+				label=f"{a_name} - {b_name} ({a}-{b})",
+				value=f"{a}-{b}",
+			)
+			for a, b in _score_options()
+		]
+
+	async def callback(self, interaction: discord.Interaction):
+		view: "SubmitFlowView" = self.view  # type: ignore[assignment]
+		view.selected_score = str(self.values[0])
+		view._refresh_submit_button_state()
+		await interaction.response.edit_message(view=view)
+
+
+class SubmitFlowView(discord.ui.View):
+	def __init__(self, submitter_id: int, submitter_clan_role_id: int):
 		super().__init__(timeout=300)
-		self.parent_view = parent_view
+		self.submitter_id = submitter_id
+		self.submitter_clan_role_id = submitter_clan_role_id
+		self.opponent_clan_role_id: Optional[int] = None
+		self.selected_score: Optional[str] = None
 
-	async def on_submit(self, interaction: discord.Interaction):
+		self.add_item(OpponentSelect(submitter_clan_role_id))
+		self.score_select = ScoreSelect(submitter_clan_role_id)
+		self.add_item(self.score_select)
+
+	def _refresh_score_options(self) -> None:
+		self.score_select.set_matchup(self.opponent_clan_role_id)
+		self.selected_score = None
+		self._refresh_submit_button_state()
+
+	def _refresh_submit_button_state(self) -> None:
+		for child in self.children:
+			if isinstance(child, discord.ui.Button) and child.custom_id == "scoreboard:submit_result":
+				child.disabled = not (self.opponent_clan_role_id is not None and self.selected_score is not None)
+
+	@discord.ui.button(label="Submit Result", style=discord.ButtonStyle.success, disabled=True, custom_id="scoreboard:submit_result")
+	async def submit_result(self, interaction: discord.Interaction, button: discord.ui.Button):
 		if not interaction.guild or not isinstance(interaction.user, discord.Member):
 			await interaction.response.send_message("This can only be used in a server.", ephemeral=True)
 			return
-		if interaction.user.id != self.parent_view.submitter_id:
+		if interaction.user.id != self.submitter_id:
 			await interaction.response.send_message("This submit flow isn’t yours.", ephemeral=True)
 			return
-		if self.parent_view.opponent_clan_role_id is None:
-			await interaction.response.send_message("Pick an opposing clan first.", ephemeral=True)
+		if self.opponent_clan_role_id is None or self.selected_score is None:
+			await interaction.response.send_message("Pick an opposing clan and a score first.", ephemeral=True)
 			return
 
 		try:
-			a, b = _parse_score(str(self.score.value))
+			a, b = _parse_score(self.selected_score)
 		except ValueError as e:
 			await interaction.response.send_message(str(e), ephemeral=True)
 			return
 
 		await interaction.response.defer(ephemeral=True, thinking=True)
-
 		cog: "ScoreboardCog" = interaction.client.get_cog("ScoreboardCog")  # type: ignore[assignment]
 		if cog is None:
 			await interaction.followup.send("Scoreboard cog is not loaded.", ephemeral=True)
@@ -402,8 +498,8 @@ class ScoreModal(discord.ui.Modal, title="Submit match score"):
 		match = PendingMatch(
 			match_id=match_id,
 			submitter_id=interaction.user.id,
-			submitter_clan_role_id=self.parent_view.submitter_clan_role_id,
-			opponent_clan_role_id=self.parent_view.opponent_clan_role_id,
+			submitter_clan_role_id=self.submitter_clan_role_id,
+			opponent_clan_role_id=self.opponent_clan_role_id,
 			submitter_score=a,
 			opponent_score=b,
 			created_at=_utcnow_iso(),
@@ -415,28 +511,6 @@ class ScoreModal(discord.ui.Modal, title="Submit match score"):
 			await cog.store.link_validation_message(match.match_id, validation_message.id)
 
 		await interaction.followup.send("Submitted! A validation message has been posted.", ephemeral=True)
-
-
-class SubmitFlowView(discord.ui.View):
-	def __init__(self, submitter_id: int, submitter_clan_role_id: int):
-		super().__init__(timeout=300)
-		self.submitter_id = submitter_id
-		self.submitter_clan_role_id = submitter_clan_role_id
-		self.opponent_clan_role_id: Optional[int] = None
-
-		self.add_item(OpponentSelect(submitter_clan_role_id))
-
-	@discord.ui.button(
-		label="Enter Score",
-		style=discord.ButtonStyle.primary,
-		disabled=True,
-		custom_id="scoreboard:open_score_modal",
-	)
-	async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
-		if interaction.user.id != self.submitter_id:
-			await interaction.response.send_message("This submit flow isn’t yours.", ephemeral=True)
-			return
-		await interaction.response.send_modal(ScoreModal(self))
 
 
 class ScoreboardMainView(discord.ui.View):
@@ -468,7 +542,7 @@ class ScoreboardMainView(discord.ui.View):
 
 		embed = discord.Embed(
 			title="Submit a result",
-			description="Select the opposing clan, then click **Enter Score**.",
+			description="Select the opposing clan and score, then click **Submit Result**.",
 			colour=discord.Colour.blurple(),
 		)
 		await interaction.response.send_message(
@@ -587,17 +661,19 @@ class ScoreboardCog(commands.Cog):
 			return
 
 		message_id = self.store.data.get("leaderboard_message_id")
-		embed = _build_leaderboard_embed(self.store.data.get("clan_stats", {}))
+		image_path = await self._render_scoreboard_portrait_image()
+		file = discord.File(image_path, filename=os.path.basename(image_path))
 
+		content = "Scoreboard (top = latest result, bottom = leaderboard)"
 		if message_id:
 			try:
 				msg = await channel.fetch_message(int(message_id))
-				await msg.edit(embed=embed)
+				await msg.edit(content=content, embed=None, attachments=[], files=[file])
 				return
 			except Exception:
 				log.warning("Could not edit existing leaderboard message; re-sending")
 
-		msg = await channel.send(embed=embed)
+		msg = await channel.send(content=content, file=file)
 		self.store.data["leaderboard_message_id"] = msg.id
 		await self.store.save()
 
@@ -678,7 +754,7 @@ class ScoreboardCog(commands.Cog):
 			log.exception("Failed updating validation message")
 
 		await self.ensure_leaderboard_message()
-		await self.post_match_image_and_summary(interaction.guild, confirmed)
+		# Leaderboard message is now the combined scoreboard image.
 
 		await interaction.followup.send("Confirmed and leaderboard updated.", ephemeral=True)
 
@@ -714,73 +790,227 @@ class ScoreboardCog(commands.Cog):
 			log.exception("Failed updating disputed message")
 		await interaction.followup.send("Marked as disputed.", ephemeral=True)
 
-	async def post_match_image_and_summary(self, guild: discord.Guild, match: PendingMatch) -> None:
-		channel = guild.get_channel(LEADERBOARD_CHANNEL_ID)
-		if channel is None:
-			try:
-				channel = await guild.fetch_channel(LEADERBOARD_CHANNEL_ID)
-			except Exception:
-				return
-		if not isinstance(channel, discord.TextChannel):
-			return
-
-		a_name = _role_name_from_id(match.submitter_clan_role_id)
-		b_name = _role_name_from_id(match.opponent_clan_role_id)
-
-		image_path = await self._render_match_image(match, a_name, b_name)
-		file = discord.File(image_path, filename=os.path.basename(image_path))
-
-		embed = discord.Embed(
-			title="Result Confirmed",
-			description=f"**{a_name}** {match.submitter_score} - {match.opponent_score} **{b_name}**",
-			colour=discord.Colour.green(),
-			timestamp=datetime.now(timezone.utc),
-		)
-		embed.set_image(url=f"attachment://{os.path.basename(image_path)}")
-		await channel.send(embed=embed, file=file)
-
-	async def _render_match_image(self, match: PendingMatch, clan_a: str, clan_b: str) -> str:
+	async def _render_scoreboard_portrait_image(self) -> str:
 		from PIL import Image, ImageDraw, ImageFont  # pillow
 
-		if os.path.exists(IMAGE_TEMPLATE_PATH):
-			base = Image.open(IMAGE_TEMPLATE_PATH).convert("RGBA")
-		else:
-			base = Image.new("RGBA", (1280, 720), (20, 20, 20, 255))
-
+		# Portrait base
+		width, height = 1080, 1920
+		base = Image.new("RGBA", (width, height), (16, 18, 24, 255))
 		draw = ImageDraw.Draw(base)
+
 		try:
-			font_big = ImageFont.truetype(FONT_PATH, 80)
-			font_med = ImageFont.truetype(FONT_PATH, 56)
+			font_title = ImageFont.truetype(FONT_PATH, 64)
+			font_big = ImageFont.truetype(FONT_PATH, 84)
+			font_med = ImageFont.truetype(FONT_PATH, 44)
+			font_small = ImageFont.truetype(FONT_PATH, 36)
 		except Exception:
+			font_title = ImageFont.load_default()
 			font_big = ImageFont.load_default()
 			font_med = ImageFont.load_default()
+			font_small = ImageFont.load_default()
 
-		w, h = base.size
-		score_text = f"{match.submitter_score} - {match.opponent_score}"
+		pad = 60
+		# Header
+		draw.text((pad, pad), "SCOREBOARD", font=font_title, fill=(235, 239, 245, 255))
+		draw.line((pad, pad + 88, width - pad, pad + 88), fill=(80, 90, 110, 255), width=3)
 
-		# Center score
-		score_bbox = draw.textbbox((0, 0), score_text, font=font_big)
-		score_w = score_bbox[2] - score_bbox[0]
-		score_h = score_bbox[3] - score_bbox[1]
-		score_x = (w - score_w) // 2
-		score_y = (h - score_h) // 2
-		draw.text((score_x, score_y), score_text, font=font_big, fill=(255, 255, 255, 255))
+		# Latest result section
+		result_top = pad + 120
+		result_h = 420
+		draw.rounded_rectangle(
+			(pad, result_top, width - pad, result_top + result_h),
+			radius=24,
+			fill=(26, 30, 40, 255),
+			outline=(60, 70, 92, 255),
+			width=3,
+		)
 
-		# Clan names left/right
-		left_bbox = draw.textbbox((0, 0), clan_a, font=font_med)
-		left_w = left_bbox[2] - left_bbox[0]
-		left_x = max(40, score_x - left_w - 60)
-		left_y = score_y + (score_h // 2) - ((left_bbox[3] - left_bbox[1]) // 2)
-		draw.text((left_x, left_y), clan_a, font=font_med, fill=(220, 220, 220, 255))
+		last = self.store.data.get("last_result")
+		if isinstance(last, dict):
+			a_name = str(last.get("a_name") or "")
+			b_name = str(last.get("b_name") or "")
+			a_score = int(last.get("a_score", 0))
+			b_score = int(last.get("b_score", 0))
+			result_text = f"{a_name}  {a_score} - {b_score}  {b_name}".strip()
+			caption = "Latest result"
+		else:
+			result_text = "No results yet"
+			caption = "Latest result"
 
-		right_bbox = draw.textbbox((0, 0), clan_b, font=font_med)
-		right_x = min(w - 40 - (right_bbox[2] - right_bbox[0]), score_x + score_w + 60)
-		right_y = score_y + (score_h // 2) - ((right_bbox[3] - right_bbox[1]) // 2)
-		draw.text((right_x, right_y), clan_b, font=font_med, fill=(220, 220, 220, 255))
+		draw.text((pad + 36, result_top + 28), caption, font=font_small, fill=(180, 190, 210, 255))
+		bbox = draw.textbbox((0, 0), result_text, font=font_big)
+		text_w = bbox[2] - bbox[0]
+		text_h = bbox[3] - bbox[1]
+		x = (width - text_w) // 2
+		y = result_top + (result_h // 2) - (text_h // 2) + 20
+		draw.text((x, y), result_text, font=font_big, fill=(245, 246, 250, 255))
 
-		out_path = data_path(f"match_{match.match_id}.png")
+		# Leaderboard section
+		table_top = result_top + result_h + 50
+		draw.text((pad, table_top), "LEADERBOARD", font=font_title, fill=(235, 239, 245, 255))
+		draw.line((pad, table_top + 88, width - pad, table_top + 88), fill=(80, 90, 110, 255), width=3)
+
+		rows = _sorted_leaderboard_rows(self.store.data.get("clan_stats", {}))
+		# Column layout
+		header_y = table_top + 120
+		col_clan = pad
+		col_score = width - pad - 360
+		col_w = width - pad - 240
+		col_l = width - pad - 120
+		row_h = 74
+
+		draw.text((col_clan, header_y), "Clan", font=font_med, fill=(190, 200, 220, 255))
+		draw.text((col_score, header_y), "Score", font=font_med, fill=(190, 200, 220, 255))
+		draw.text((col_w, header_y), "Win", font=font_med, fill=(190, 200, 220, 255))
+		draw.text((col_l, header_y), "Loss", font=font_med, fill=(190, 200, 220, 255))
+		draw.line((pad, header_y + 56, width - pad, header_y + 56), fill=(60, 70, 92, 255), width=2)
+
+		start_y = header_y + 80
+		max_rows = 16
+		for i, r in enumerate(rows[:max_rows], start=1):
+			y = start_y + (i - 1) * row_h
+			bg = (22, 26, 36, 255) if i % 2 == 1 else (18, 22, 32, 255)
+			draw.rounded_rectangle(
+				(pad, y - 8, width - pad, y + row_h - 8),
+				radius=16,
+				fill=bg,
+				outline=(38, 44, 60, 255),
+				width=2,
+			)
+			name = str(r["name"])
+			name = (name[:18] + "…") if len(name) > 19 else name
+			draw.text((col_clan + 10, y), f"{i}. {name}", font=font_med, fill=(235, 239, 245, 255))
+			draw.text((col_score + 20, y), str(r["score"]), font=font_med, fill=(235, 239, 245, 255))
+			draw.text((col_w + 20, y), str(r["w"]), font=font_med, fill=(235, 239, 245, 255))
+			draw.text((col_l + 20, y), str(r["l"]), font=font_med, fill=(235, 239, 245, 255))
+
+		out_path = data_path("scoreboard.png")
 		base.save(out_path, format="PNG")
 		return out_path
+
+
+	def _admin_check(self, interaction: discord.Interaction) -> bool:
+		if not isinstance(interaction.user, discord.Member):
+			return False
+		return _is_admin_member(interaction.user)
+
+
+	@app_commands.command(name="scoreboard_admin_edit_clan", description="Admin: edit a clan's leaderboard values")
+	@app_commands.check(_admin_app_command_check)
+	async def scoreboard_admin_edit_clan(
+		self,
+		interaction: discord.Interaction,
+		clan_role: discord.Role,
+		score: int,
+		wins: int,
+		losses: int,
+	):
+		await interaction.response.defer(ephemeral=True)
+		if clan_role.id not in set(CLAN_ROLES.values()):
+			await interaction.followup.send("That role is not a configured clan role.", ephemeral=True)
+			return
+		if score < 0 or wins < 0 or losses < 0:
+			await interaction.followup.send("Score/Wins/Losses must be non-negative.", ephemeral=True)
+			return
+
+		key = str(clan_role.id)
+		stats = self.store.data.setdefault("clan_stats", {})
+		s = stats.setdefault(
+			key,
+			{"name": clan_role.name, "w": 0, "l": 0, "played": 0, "maps_for": 0, "maps_against": 0},
+		)
+		s["name"] = s.get("name") or clan_role.name
+		s["maps_for"] = int(score)
+		s["w"] = int(wins)
+		s["l"] = int(losses)
+		s["played"] = int(wins) + int(losses)
+		self.store.data["clan_stats"] = stats
+		await self.store.save()
+		await self.ensure_leaderboard_message()
+		await interaction.followup.send(f"Updated {clan_role.name}: score={score}, W={wins}, L={losses}", ephemeral=True)
+
+
+	@app_commands.command(name="scoreboard_admin_edit_match", description="Admin: edit a confirmed match and adjust leaderboard")
+	@app_commands.check(_admin_app_command_check)
+	async def scoreboard_admin_edit_match(
+		self,
+		interaction: discord.Interaction,
+		match_id: str,
+		new_score: str,
+	):
+		await interaction.response.defer(ephemeral=True)
+		match = await self.store.get_match(match_id)
+		if match is None:
+			await interaction.followup.send("Match not found.", ephemeral=True)
+			return
+		if match.status != "confirmed":
+			await interaction.followup.send("Only confirmed matches can be edited with leaderboard adjustment.", ephemeral=True)
+			return
+
+		try:
+			new_a, new_b = _parse_score(new_score)
+		except ValueError as e:
+			await interaction.followup.send(str(e), ephemeral=True)
+			return
+
+		# Compute delta vs old and apply to clan_stats
+		old_a, old_b = match.submitter_score, match.opponent_score
+		a_key = str(match.submitter_clan_role_id)
+		b_key = str(match.opponent_clan_role_id)
+		stats: dict[str, Any] = self.store.data.setdefault("clan_stats", {})
+		a = stats.setdefault(a_key, {"name": _role_name_from_id(match.submitter_clan_role_id), "w": 0, "l": 0, "played": 0, "maps_for": 0, "maps_against": 0})
+		b = stats.setdefault(b_key, {"name": _role_name_from_id(match.opponent_clan_role_id), "w": 0, "l": 0, "played": 0, "maps_for": 0, "maps_against": 0})
+
+		# Undo old maps
+		a["maps_for"] = int(a.get("maps_for", 0)) - int(old_a)
+		a["maps_against"] = int(a.get("maps_against", 0)) - int(old_b)
+		b["maps_for"] = int(b.get("maps_for", 0)) - int(old_b)
+		b["maps_against"] = int(b.get("maps_against", 0)) - int(old_a)
+
+		# Undo old W/L
+		if old_a > old_b:
+			a["w"] = int(a.get("w", 0)) - 1
+			b["l"] = int(b.get("l", 0)) - 1
+		else:
+			b["w"] = int(b.get("w", 0)) - 1
+			a["l"] = int(a.get("l", 0)) - 1
+
+		# Apply new maps
+		a["maps_for"] = int(a.get("maps_for", 0)) + int(new_a)
+		a["maps_against"] = int(a.get("maps_against", 0)) + int(new_b)
+		b["maps_for"] = int(b.get("maps_for", 0)) + int(new_b)
+		b["maps_against"] = int(b.get("maps_against", 0)) + int(new_a)
+
+		# Apply new W/L
+		if new_a > new_b:
+			a["w"] = int(a.get("w", 0)) + 1
+			b["l"] = int(b.get("l", 0)) + 1
+		else:
+			b["w"] = int(b.get("w", 0)) + 1
+			a["l"] = int(a.get("l", 0)) + 1
+
+		# Normalize played
+		a["played"] = int(a.get("w", 0)) + int(a.get("l", 0))
+		b["played"] = int(b.get("w", 0)) + int(b.get("l", 0))
+
+		# Persist match update
+		match.submitter_score = int(new_a)
+		match.opponent_score = int(new_b)
+		self.store.data["pending_matches"][match.match_id] = match.to_dict()
+
+		# Update last_result to this edited match
+		self.store.data["last_result"] = {
+			"match_id": match.match_id,
+			"a_name": _role_name_from_id(match.submitter_clan_role_id),
+			"b_name": _role_name_from_id(match.opponent_clan_role_id),
+			"a_score": match.submitter_score,
+			"b_score": match.opponent_score,
+			"at": _utcnow_iso(),
+		}
+
+		await self.store.save()
+		await self.ensure_leaderboard_message()
+		await interaction.followup.send(f"Updated match {match_id} to {new_a}-{new_b} and adjusted leaderboard.", ephemeral=True)
 
 	@app_commands.command(name="scoreboard_repost", description="Repost/repair the scoreboard and leaderboard messages")
 	@app_commands.checks.has_permissions(administrator=True)
