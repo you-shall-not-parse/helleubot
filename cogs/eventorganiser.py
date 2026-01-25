@@ -1238,11 +1238,11 @@ class EventOrganiser(commands.Cog):
 		embed = discord.Embed(
 			title="Fixture Organiser",
 			description=(
-			    "Use the buttons below to organise the fixture end-to-end.\n"
+			    "- Click the button below to organise the fixture end-to-end.\n"
 		        "- Propose date/time (must be within the round window)\n"
 			    "- Propose team size (30-50, equal sizes)\n"
-			    "- Roll map & midpoint (first roll by Clan A; then each clan can reroll up to 3 times)\n"
-			    "- Decide sides (once; must be done by the clan that did NOT do the last map roll)\n"
+			    "- Roll map & midpoint (first roll is free, then each clan can reroll up to 3 times)\n"
+			    "- Decide sides with a random chance\n"
 			    "- Create the Discord event when done!"
 			),
 			color=discord.Color.blurple(),
