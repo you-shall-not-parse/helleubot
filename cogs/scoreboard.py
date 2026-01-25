@@ -19,7 +19,7 @@ from data_paths import data_path
 # -----------------------------
 
 # Role allowed to use admin scoreboard edit commands
-ADMIN_ROLE_ID: int = 0
+ADMIN_ROLE_ID: int = 1109147750932676649
 
 # Channel where the main "Submit Scores" embed is posted
 SCOREBOARD_CHANNEL_ID: int = 1462387812815998997
@@ -43,7 +43,7 @@ CLAN_ROLES: dict[str, int] = {
 }
 
 # Image/font assets
-IMAGE_TEMPLATE_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_blank.jpg")
+IMAGE_TEMPLATE_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_blank1.jpg")
 FONT_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_font.ttf")
 
 
