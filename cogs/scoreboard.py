@@ -623,6 +623,7 @@ class ScoreboardCog(commands.Cog):
 		self.bot = bot
 		self.store = ScoreboardStore()
 		self._did_guild_sync = False
+		self._did_initial_ensure = False
 		self._leaderboard_lock = asyncio.Lock()
 		self._scoreboard_lock = asyncio.Lock()
 		self._last_leaderboard_update_ts: float = 0.0
@@ -654,6 +655,12 @@ class ScoreboardCog(commands.Cog):
 				# Don't flip the flag; we'll retry next on_ready.
 				return
 
+		# on_ready can fire multiple times (reconnects). Only do the auto-repair once
+		# per process start to avoid accidental re-posting.
+		if self._did_initial_ensure:
+			return
+		self._did_initial_ensure = True
+
 		# Post/repair the main scoreboard message and leaderboard message.
 		await self.ensure_scoreboard_message()
 		await self.ensure_leaderboard_message()
@@ -681,8 +688,14 @@ class ScoreboardCog(commands.Cog):
 					msg = await channel.fetch_message(int(message_id))
 					await msg.edit(embed=embed, view=view)
 					return
+				except discord.NotFound:
+					# Message was deleted; clear the stored ID and re-send.
+					self.store.data["scoreboard_message_id"] = None
+					await self.store.save()
 				except Exception:
-					log.warning("Could not edit existing scoreboard message; re-sending")
+					# Don't spam new messages on transient failures.
+					log.exception("Could not edit existing scoreboard message")
+					return
 
 			msg = await channel.send(embed=embed, view=view)
 			self.store.data["scoreboard_message_id"] = msg.id
@@ -722,11 +735,18 @@ class ScoreboardCog(commands.Cog):
 			if message_id:
 				try:
 					msg = await channel.fetch_message(int(message_id))
-					await msg.edit(content=content, embed=embed, attachments=[], files=[file])
+					# Replace the attachment with the newly rendered image.
+					await msg.edit(content=content, embed=embed, attachments=[file])
 					self._last_leaderboard_update_ts = now
 					return
+				except discord.NotFound:
+					# Message was deleted; clear the stored ID and re-send.
+					self.store.data["leaderboard_message_id"] = None
+					await self.store.save()
 				except Exception:
-					log.warning("Could not edit existing leaderboard message; re-sending")
+					# Don't spam new messages on transient failures.
+					log.exception("Could not edit existing leaderboard message")
+					return
 
 			msg = await channel.send(content=content, embed=embed, file=file)
 			self.store.data["leaderboard_message_id"] = msg.id
