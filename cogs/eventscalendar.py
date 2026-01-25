@@ -550,7 +550,7 @@ class EventDisplayCog(commands.Cog):
                     if all_channel_ids:
                         # Use the first channel ID as sign-up channel
                         channel_id = int(all_channel_ids[0])
-                        field_value += f"\n📝 **Sign-Up Channel:** <#{channel_id}>"
+                        field_value += f"\n🧵**Organiser Thread:** <#{channel_id}>"
                         
                         # Show rest of description (excluding channel mentions and URLs)
                         description = re.sub(r'<#\d+>', '', event.description)
@@ -560,22 +560,22 @@ class EventDisplayCog(commands.Cog):
                             if len(description) > 100:
                                 description += "..."
                             if thread_url:
-                                field_value += f"\n**[Details]({thread_url})**: {description}"
+                                field_value += f"\n**({thread_url})**: {description}"
                             else:
-                                field_value += f"\n**Details:** {description}"
+                                field_value += f"\n {description}"
                     else:
                         # No channel mention or URL, show description normally
                         description = event.description[:100]
                         if len(event.description) > 100:
                             description += "..."
                         if thread_url:
-                            field_value += f"\n**[Details]({thread_url})**: {description}"
+                            field_value += f"\n**({thread_url})**: {description}"
                         else:
-                            field_value += f"\n**Details:** {description}"
+                            field_value += f"\n {description}"
 
                 elif thread_url:
                     # No description, but still provide a link to the event thread (if enabled).
-                    field_value += f"\n**[Details]({thread_url})**"
+                    field_value += f"\n**({thread_url})**"
 
                 embed.add_field(
                     name="\u200b",

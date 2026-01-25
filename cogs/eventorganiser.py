@@ -134,6 +134,12 @@ def _format_round_window(round_no: int) -> str:
 	return f"{start_str} - {end_str}"
 
 
+def _format_round_window_modal(round_no: int) -> str:
+	"""Short format for modal titles: 'R1 DD/MM - DD/MM'."""
+	start, end = ROUND_WINDOWS[round_no]
+	return f"R{round_no} {start.strftime('%d/%m')} - {end.strftime('%d/%m')}"
+
+
 def _parse_datetime_utc(date_text: str, time_text: str) -> datetime:
 	"""Parse form inputs into an aware UTC datetime.
 
@@ -690,7 +696,7 @@ class OpponentRoundView(discord.ui.View):
 	# Selects handle state updates via their callbacks.
 
 
-class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
+class DateTimeModal(discord.ui.Modal):
 	date_field = discord.ui.TextInput(
 		label="Date",
 		placeholder="DD/MM/YYYY",
@@ -704,8 +710,8 @@ class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
 		max_length=5,
 	)
 
-	def __init__(self, thread_id: int):
-		super().__init__()
+	def __init__(self, thread_id: int, round_no: int):
+		super().__init__(title=_format_round_window_modal(round_no))
 		self.thread_id = thread_id
 
 	async def on_submit(self, interaction: discord.Interaction):
@@ -853,7 +859,7 @@ class FixtureThreadView(discord.ui.View):
 		if s.agreed_datetime_utc:
 			await interaction.response.send_message("Date/time is already locked.", ephemeral=True)
 			return
-		await interaction.response.send_modal(DateTimeModal(thread_id=s.thread_id))
+		await interaction.response.send_modal(DateTimeModal(thread_id=s.thread_id, round_no=s.round_no))
 
 	@discord.ui.button(label="Accept date/time", style=discord.ButtonStyle.success, custom_id="fixture:dt_accept")
 	async def accept_datetime(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1245,12 +1251,6 @@ class EventOrganiser(commands.Cog):
 			title="Fixture Organiser",
 			description=(
 			    "Use the buttons below to organise the fixture end-to-end.\n"
-			    "1. Propose date/time (must be within the round window)\n"
-			    "2. Propose until agreed\n"
-			    "3. Propose team size (30-50, equal sizes)\n"
-			    "4. Roll map + midpoint (first roll by Clan A; then each clan can reroll up to 3 times)\n"
-			    "5. Decide sides (once)\n"
-			    "6. Create the Discord event and it'll go in the calendar!"
 			),
 			color=discord.Color.blurple(),
 		)
