@@ -673,18 +673,25 @@ class ScoreboardCog(commands.Cog):
 
 		message_id = self.store.data.get("leaderboard_message_id")
 		image_path = await self._render_scoreboard_image()
-		file = discord.File(image_path, filename=os.path.basename(image_path))
-		content = ""  # keep the channel clean; text is drawn on the image
+		filename = os.path.basename(image_path)
+		file = discord.File(image_path, filename=filename)
+		embed = discord.Embed(
+			title="League Scoreboard",
+			colour=discord.Colour.blurple(),
+			timestamp=datetime.now(timezone.utc),
+		)
+		embed.set_image(url=f"attachment://{filename}")
+		content = ""
 
 		if message_id:
 			try:
 				msg = await channel.fetch_message(int(message_id))
-				await msg.edit(content=content, embed=None, attachments=[], files=[file])
+				await msg.edit(content=content, embed=embed, attachments=[], files=[file])
 				return
 			except Exception:
 				log.warning("Could not edit existing leaderboard message; re-sending")
 
-		msg = await channel.send(content=content, file=file)
+		msg = await channel.send(content=content, embed=embed, file=file)
 		self.store.data["leaderboard_message_id"] = msg.id
 		await self.store.save()
 
@@ -700,118 +707,94 @@ class ScoreboardCog(commands.Cog):
 			base = Image.new("RGBA", (1080, 1920), (16, 18, 24, 255))
 
 		w, h = base.size
-		overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
-		draw = ImageDraw.Draw(overlay)
+		draw = ImageDraw.Draw(base)
 
 		def _clamp(n: int, lo: int, hi: int) -> int:
 			return max(lo, min(hi, n))
 
-		# Font sizes scale with image size; tweak if your template has fixed areas.
-		font_title_size = _clamp(int(h * 0.045), 28, 84)
-		font_big_size = _clamp(int(h * 0.060), 34, 110)
-		font_med_size = _clamp(int(h * 0.034), 22, 60)
-		font_small_size = _clamp(int(h * 0.026), 16, 46)
-		try:
-			font_title = ImageFont.truetype(FONT_PATH, font_title_size)
-			font_big = ImageFont.truetype(FONT_PATH, font_big_size)
-			font_med = ImageFont.truetype(FONT_PATH, font_med_size)
-			font_small = ImageFont.truetype(FONT_PATH, font_small_size)
-		except Exception:
-			font_title = ImageFont.load_default()
-			font_big = ImageFont.load_default()
-			font_med = ImageFont.load_default()
-			font_small = ImageFont.load_default()
+		def _truetype(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+			try:
+				return ImageFont.truetype(FONT_PATH, size)
+			except Exception:
+				return ImageFont.load_default()
+
+		def _fit_font(text: str, max_width: int, start_size: int, min_size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+			# Try to shrink font until it fits. If we fall back to load_default() we can't resize further.
+			for size in range(start_size, min_size - 1, -2):
+				font = _truetype(size)
+				bbox = draw.textbbox((0, 0), text, font=font)
+				if (bbox[2] - bbox[0]) <= max_width:
+					return font
+			return _truetype(min_size)
+
+		# Outline for readability without drawing any background boxes
+		stroke_w = _clamp(int(h * 0.0035), 1, 4)
+		stroke_fill = (0, 0, 0, 255)
+		text_fill = (255, 255, 255, 255)
 
 		margin = int(w * 0.06)
-		# Areas (relative). Adjust these ratios if your template has different spacing.
+		# Areas (relative). These should roughly match scoreboard_blank1.jpg's boxes.
 		result_top = int(h * 0.08)
-		result_bottom = int(h * 0.32)
-		table_top = int(h * 0.40)
+		result_bottom = int(h * 0.30)
+		table_top = int(h * 0.36)
 		table_bottom = int(h * 0.94)
 
-		# Semi-transparent panels for readability
-		panel_fill = (10, 12, 16, 150)
-		panel_outline = (230, 230, 240, 90)
-		draw.rounded_rectangle(
-			(margin, result_top, w - margin, result_bottom),
-			radius=24,
-			fill=panel_fill,
-			outline=panel_outline,
-			width=3,
-		)
-		draw.rounded_rectangle(
-			(margin, table_top, w - margin, table_bottom),
-			radius=24,
-			fill=panel_fill,
-			outline=panel_outline,
-			width=3,
-		)
-
-		# Latest result text
+		# Latest result text (centered)
 		last = self.store.data.get("last_result")
 		if isinstance(last, dict):
 			result_text = f"{last.get('a_name','')} {last.get('a_score',0)} - {last.get('b_score',0)} {last.get('b_name','')}".strip()
 		else:
-			result_text = "No results yet"
-		draw.text((margin + 24, result_top + 18), "RESULT", font=font_title, fill=(245, 245, 250, 220))
-		bbox = draw.textbbox((0, 0), result_text, font=font_big)
+			result_text = "NO RESULTS YET"
+
+		max_result_w = (w - 2 * margin) - 40
+		result_font = _fit_font(result_text, max_result_w, start_size=_clamp(int(h * 0.070), 30, 110), min_size=20)
+		bbox = draw.textbbox((0, 0), result_text, font=result_font)
 		text_w = bbox[2] - bbox[0]
 		text_h = bbox[3] - bbox[1]
-		cx = (w - text_w) // 2
-		cy = result_top + ((result_bottom - result_top - text_h) // 2) + 10
-		draw.text((cx, cy), result_text, font=font_big, fill=(255, 255, 255, 255))
+		x = (w - text_w) // 2
+		y = result_top + ((result_bottom - result_top - text_h) // 2)
+		draw.text((x, y), result_text, font=result_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
 
-		# Leaderboard table
-		draw.text((margin + 24, table_top + 18), "LEADERBOARD", font=font_title, fill=(245, 245, 250, 220))
+		# Leaderboard table (auto-fit all teams)
 		rows = _sorted_leaderboard_rows(self.store.data.get("clan_stats", {}))
-		max_rows = 16
-		usable_top = table_top + int(h * 0.08)
-		usable_bottom = table_bottom - 24
-		row_h = max(34, int((usable_bottom - usable_top) / (max_rows + 2)))
+		row_count = max(1, len(rows))
+		usable_top = table_top + int(h * 0.06)
+		usable_bottom = table_bottom - int(h * 0.03)
+		# +1 for header row
+		row_h = max(16, int((usable_bottom - usable_top) / (row_count + 1)))
 
-		col_idx = margin + 24
+		header_font = _truetype(_clamp(int(row_h * 0.75), 12, 44))
+		row_font = _truetype(_clamp(int(row_h * 0.75), 12, 42))
+
+		col_idx = margin + int(w * 0.02)
 		col_name = margin + int(w * 0.12)
 		col_score = w - margin - int(w * 0.30)
-		col_w = w - margin - int(w * 0.18)
+		col_w = w - margin - int(w * 0.16)
 		col_l = w - margin - int(w * 0.08)
 
 		header_y = usable_top
-		draw.text((col_idx, header_y), "#", font=font_med, fill=(220, 225, 235, 230))
-		draw.text((col_name, header_y), "Clan", font=font_med, fill=(220, 225, 235, 230))
-		draw.text((col_score, header_y), "Score", font=font_med, fill=(220, 225, 235, 230))
-		draw.text((col_w, header_y), "W", font=font_med, fill=(220, 225, 235, 230))
-		draw.text((col_l, header_y), "L", font=font_med, fill=(220, 225, 235, 230))
-		draw.line(
-			(margin + 18, header_y + row_h - 10, w - margin - 18, header_y + row_h - 10),
-			fill=(255, 255, 255, 90),
-			width=2,
-		)
+		draw.text((col_idx, header_y), "#", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+		draw.text((col_name, header_y), "CLAN", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+		draw.text((col_score, header_y), "SCORE", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+		draw.text((col_w, header_y), "W", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+		draw.text((col_l, header_y), "L", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
 
-		for i, r in enumerate(rows[:max_rows], start=1):
-			y = header_y + row_h + (i - 1) * row_h
-			if y + row_h > usable_bottom:
+		for i, r in enumerate(rows, start=1):
+			y = header_y + row_h * i
+			if y + row_h > usable_bottom + 2:
 				break
-			# subtle zebra row
-			if i % 2 == 0:
-				draw.rounded_rectangle(
-					(margin + 18, y - 6, w - margin - 18, y + row_h - 6),
-					radius=14,
-					fill=(255, 255, 255, 18),
-				)
-
 			name = str(r["name"])
 			# keep names from spilling
-			if len(name) > 18:
-				name = name[:17] + "…"
-			draw.text((col_idx, y), str(i), font=font_small, fill=(255, 255, 255, 235))
-			draw.text((col_name, y), name, font=font_small, fill=(255, 255, 255, 235))
-			draw.text((col_score, y), str(int(r["score"])), font=font_small, fill=(255, 255, 255, 235))
-			draw.text((col_w, y), str(int(r["w"])), font=font_small, fill=(255, 255, 255, 235))
-			draw.text((col_l, y), str(int(r["l"])), font=font_small, fill=(255, 255, 255, 235))
+			if len(name) > 12:
+				name = name[:11] + "…"
+			draw.text((col_idx, y), str(i), font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+			draw.text((col_name, y), name, font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+			draw.text((col_score, y), str(int(r["score"])), font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+			draw.text((col_w, y), str(int(r["w"])), font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+			draw.text((col_l, y), str(int(r["l"])), font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
 
-		rendered = Image.alpha_composite(base, overlay)
 		out_path = data_path("scoreboard_rendered.png")
-		rendered.save(out_path, format="PNG")
+		base.save(out_path, format="PNG")
 		return out_path
 
 	async def post_validation_message(self, guild: discord.Guild, match: PendingMatch) -> Optional[discord.Message]:
@@ -1052,6 +1035,41 @@ class ScoreboardCog(commands.Cog):
 		await self.store.save()
 		await self.ensure_leaderboard_message()
 		await interaction.followup.send(f"Updated match {match_id} to {new_a}-{new_b} and adjusted leaderboard.", ephemeral=True)
+
+	@app_commands.command(name="scoreboard_admin_set_latest", description="Admin: set the displayed latest result line")
+	@app_commands.check(_admin_app_command_check)
+	async def scoreboard_admin_set_latest(
+		self,
+		interaction: discord.Interaction,
+		clan_a: discord.Role,
+		clan_b: discord.Role,
+		score: str,
+	):
+		"""Sets the displayed latest result on the scoreboard image.
+
+		This does NOT change leaderboard totals; use the other admin commands to correct totals.
+		"""
+		await interaction.response.defer(ephemeral=True)
+		if clan_a.id not in set(CLAN_ROLES.values()) or clan_b.id not in set(CLAN_ROLES.values()):
+			await interaction.followup.send("Both clans must be configured clan roles.", ephemeral=True)
+			return
+		try:
+			a, b = _parse_score(score)
+		except ValueError as e:
+			await interaction.followup.send(str(e), ephemeral=True)
+			return
+
+		self.store.data["last_result"] = {
+			"match_id": "manual",
+			"a_name": _role_name_from_id(clan_a.id),
+			"b_name": _role_name_from_id(clan_b.id),
+			"a_score": a,
+			"b_score": b,
+			"at": _utcnow_iso(),
+		}
+		await self.store.save()
+		await self.ensure_leaderboard_message()
+		await interaction.followup.send(f"Set latest result to {_role_name_from_id(clan_a.id)} {a}-{b} {_role_name_from_id(clan_b.id)}.", ephemeral=True)
 
 	@app_commands.command(name="scoreboard_repost", description="Repost/repair the scoreboard and leaderboard messages")
 	@app_commands.checks.has_permissions(administrator=True)
