@@ -623,6 +623,9 @@ class ScoreboardCog(commands.Cog):
 		self.bot = bot
 		self.store = ScoreboardStore()
 		self._did_guild_sync = False
+		self._leaderboard_lock = asyncio.Lock()
+		self._scoreboard_lock = asyncio.Lock()
+		self._last_leaderboard_update_ts: float = 0.0
 
 	async def cog_load(self) -> None:
 		await self.store.load()
@@ -656,70 +659,79 @@ class ScoreboardCog(commands.Cog):
 		await self.ensure_leaderboard_message()
 
 	async def ensure_scoreboard_message(self) -> None:
-		if SCOREBOARD_CHANNEL_ID == 0:
-			return
-		channel = self.bot.get_channel(SCOREBOARD_CHANNEL_ID)
-		if channel is None:
-			try:
-				channel = await self.bot.fetch_channel(SCOREBOARD_CHANNEL_ID)
-			except Exception:
-				log.exception("Failed to fetch scoreboard channel")
+		async with self._scoreboard_lock:
+			if SCOREBOARD_CHANNEL_ID == 0:
 				return
-		if not isinstance(channel, discord.TextChannel):
-			return
-
-		message_id = self.store.data.get("scoreboard_message_id")
-		embed = _build_scoreboard_embed()
-		view = ScoreboardMainView()
-
-		if message_id:
-			try:
-				msg = await channel.fetch_message(int(message_id))
-				await msg.edit(embed=embed, view=view)
+			channel = self.bot.get_channel(SCOREBOARD_CHANNEL_ID)
+			if channel is None:
+				try:
+					channel = await self.bot.fetch_channel(SCOREBOARD_CHANNEL_ID)
+				except Exception:
+					log.exception("Failed to fetch scoreboard channel")
+					return
+			if not isinstance(channel, discord.TextChannel):
 				return
-			except Exception:
-				log.warning("Could not edit existing scoreboard message; re-sending")
 
-		msg = await channel.send(embed=embed, view=view)
-		self.store.data["scoreboard_message_id"] = msg.id
-		await self.store.save()
+			message_id = self.store.data.get("scoreboard_message_id")
+			embed = _build_scoreboard_embed()
+			view = ScoreboardMainView()
+
+			if message_id:
+				try:
+					msg = await channel.fetch_message(int(message_id))
+					await msg.edit(embed=embed, view=view)
+					return
+				except Exception:
+					log.warning("Could not edit existing scoreboard message; re-sending")
+
+			msg = await channel.send(embed=embed, view=view)
+			self.store.data["scoreboard_message_id"] = msg.id
+			await self.store.save()
 
 	async def ensure_leaderboard_message(self) -> None:
-		if LEADERBOARD_CHANNEL_ID == 0:
-			return
-		channel = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
-		if channel is None:
-			try:
-				channel = await self.bot.fetch_channel(LEADERBOARD_CHANNEL_ID)
-			except Exception:
-				log.exception("Failed to fetch leaderboard channel")
+		async with self._leaderboard_lock:
+			now = asyncio.get_running_loop().time()
+			# Debounce very fast back-to-back calls (startup/reconnect).
+			if self._last_leaderboard_update_ts and (now - self._last_leaderboard_update_ts) < 2.0:
 				return
-		if not isinstance(channel, discord.TextChannel):
-			return
 
-		message_id = self.store.data.get("leaderboard_message_id")
-		image_path = await self._render_scoreboard_image()
-		filename = os.path.basename(image_path)
-		file = discord.File(image_path, filename=filename)
-		embed = discord.Embed(
-			title="League Scoreboard",
-			colour=discord.Colour.blurple(),
-			timestamp=datetime.now(timezone.utc),
-		)
-		embed.set_image(url=f"attachment://{filename}")
-		content = ""
-
-		if message_id:
-			try:
-				msg = await channel.fetch_message(int(message_id))
-				await msg.edit(content=content, embed=embed, attachments=[], files=[file])
+			if LEADERBOARD_CHANNEL_ID == 0:
 				return
-			except Exception:
-				log.warning("Could not edit existing leaderboard message; re-sending")
+			channel = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
+			if channel is None:
+				try:
+					channel = await self.bot.fetch_channel(LEADERBOARD_CHANNEL_ID)
+				except Exception:
+					log.exception("Failed to fetch leaderboard channel")
+					return
+			if not isinstance(channel, discord.TextChannel):
+				return
 
-		msg = await channel.send(content=content, embed=embed, file=file)
-		self.store.data["leaderboard_message_id"] = msg.id
-		await self.store.save()
+			message_id = self.store.data.get("leaderboard_message_id")
+			image_path = await self._render_scoreboard_image()
+			filename = os.path.basename(image_path)
+			file = discord.File(image_path, filename=filename)
+			embed = discord.Embed(
+				title="League Scoreboard",
+				colour=discord.Colour.blurple(),
+				timestamp=datetime.now(timezone.utc),
+			)
+			embed.set_image(url=f"attachment://{filename}")
+			content = ""
+
+			if message_id:
+				try:
+					msg = await channel.fetch_message(int(message_id))
+					await msg.edit(content=content, embed=embed, attachments=[], files=[file])
+					self._last_leaderboard_update_ts = now
+					return
+				except Exception:
+					log.warning("Could not edit existing leaderboard message; re-sending")
+
+			msg = await channel.send(content=content, embed=embed, file=file)
+			self.store.data["leaderboard_message_id"] = msg.id
+			await self.store.save()
+			self._last_leaderboard_update_ts = now
 
 	async def _render_scoreboard_image(self) -> str:
 		"""Render the scoreboard onto the provided template image."""
