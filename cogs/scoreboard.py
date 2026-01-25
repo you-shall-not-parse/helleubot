@@ -171,6 +171,17 @@ def _sorted_leaderboard_rows(stats: dict[str, Any]) -> list[dict[str, Any]]:
 	return rows
 
 
+def _build_leaderboard_text(stats: dict[str, Any]) -> str:
+	rows = _sorted_leaderboard_rows(stats)
+	header = f"{'#':<3}{'Clan':<16}{'Score':>6}{'W':>4}{'L':>4}"
+	lines = [header]
+	for idx, r in enumerate(rows, start=1):
+		name = str(r["name"])
+		name = (name[:13] + "…") if len(name) > 14 else name
+		lines.append(f"{idx:<3}{name:<16}{int(r['score']):>6}{int(r['w']):>4}{int(r['l']):>4}")
+	return "```\n" + "\n".join(lines) + "\n```"
+
+
 def _build_scoreboard_embed() -> discord.Embed:
 	embed = discord.Embed(
 		title="Submit Match Scores",
@@ -661,19 +672,37 @@ class ScoreboardCog(commands.Cog):
 			return
 
 		message_id = self.store.data.get("leaderboard_message_id")
-		image_path = await self._render_scoreboard_portrait_image()
-		file = discord.File(image_path, filename=os.path.basename(image_path))
 
-		content = "Scoreboard (top = latest result, bottom = leaderboard)"
+		last = self.store.data.get("last_result")
+		if isinstance(last, dict):
+			latest_line = f"Latest: {last.get('a_name','')} {last.get('a_score',0)} - {last.get('b_score',0)} {last.get('b_name','')}"
+		else:
+			latest_line = "Latest: (no confirmed results yet)"
+
+		leaderboard_text = _build_leaderboard_text(self.store.data.get("clan_stats", {}))
+		content = f"{latest_line}\n\n{leaderboard_text}"
+
+		file: Optional[discord.File] = None
+		if os.path.exists(IMAGE_TEMPLATE_PATH):
+			file = discord.File(IMAGE_TEMPLATE_PATH, filename=os.path.basename(IMAGE_TEMPLATE_PATH))
+		else:
+			log.warning("Scoreboard template image not found at %s", IMAGE_TEMPLATE_PATH)
+
 		if message_id:
 			try:
 				msg = await channel.fetch_message(int(message_id))
-				await msg.edit(content=content, embed=None, attachments=[], files=[file])
+				if file is not None:
+					await msg.edit(content=content, embed=None, attachments=[], files=[file])
+				else:
+					await msg.edit(content=content, embed=None, attachments=[])
 				return
 			except Exception:
 				log.warning("Could not edit existing leaderboard message; re-sending")
 
-		msg = await channel.send(content=content, file=file)
+		if file is not None:
+			msg = await channel.send(content=content, file=file)
+		else:
+			msg = await channel.send(content=content)
 		self.store.data["leaderboard_message_id"] = msg.id
 		await self.store.save()
 
@@ -790,103 +819,7 @@ class ScoreboardCog(commands.Cog):
 			log.exception("Failed updating disputed message")
 		await interaction.followup.send("Marked as disputed.", ephemeral=True)
 
-	async def _render_scoreboard_portrait_image(self) -> str:
-		from PIL import Image, ImageDraw, ImageFont  # pillow
-
-		# Portrait base
-		width, height = 1080, 1920
-		base = Image.new("RGBA", (width, height), (16, 18, 24, 255))
-		draw = ImageDraw.Draw(base)
-
-		try:
-			font_title = ImageFont.truetype(FONT_PATH, 64)
-			font_big = ImageFont.truetype(FONT_PATH, 84)
-			font_med = ImageFont.truetype(FONT_PATH, 44)
-			font_small = ImageFont.truetype(FONT_PATH, 36)
-		except Exception:
-			font_title = ImageFont.load_default()
-			font_big = ImageFont.load_default()
-			font_med = ImageFont.load_default()
-			font_small = ImageFont.load_default()
-
-		pad = 60
-		# Header
-		draw.text((pad, pad), "SCOREBOARD", font=font_title, fill=(235, 239, 245, 255))
-		draw.line((pad, pad + 88, width - pad, pad + 88), fill=(80, 90, 110, 255), width=3)
-
-		# Latest result section
-		result_top = pad + 120
-		result_h = 420
-		draw.rounded_rectangle(
-			(pad, result_top, width - pad, result_top + result_h),
-			radius=24,
-			fill=(26, 30, 40, 255),
-			outline=(60, 70, 92, 255),
-			width=3,
-		)
-
-		last = self.store.data.get("last_result")
-		if isinstance(last, dict):
-			a_name = str(last.get("a_name") or "")
-			b_name = str(last.get("b_name") or "")
-			a_score = int(last.get("a_score", 0))
-			b_score = int(last.get("b_score", 0))
-			result_text = f"{a_name}  {a_score} - {b_score}  {b_name}".strip()
-			caption = "Latest result"
-		else:
-			result_text = "No results yet"
-			caption = "Latest result"
-
-		draw.text((pad + 36, result_top + 28), caption, font=font_small, fill=(180, 190, 210, 255))
-		bbox = draw.textbbox((0, 0), result_text, font=font_big)
-		text_w = bbox[2] - bbox[0]
-		text_h = bbox[3] - bbox[1]
-		x = (width - text_w) // 2
-		y = result_top + (result_h // 2) - (text_h // 2) + 20
-		draw.text((x, y), result_text, font=font_big, fill=(245, 246, 250, 255))
-
-		# Leaderboard section
-		table_top = result_top + result_h + 50
-		draw.text((pad, table_top), "LEADERBOARD", font=font_title, fill=(235, 239, 245, 255))
-		draw.line((pad, table_top + 88, width - pad, table_top + 88), fill=(80, 90, 110, 255), width=3)
-
-		rows = _sorted_leaderboard_rows(self.store.data.get("clan_stats", {}))
-		# Column layout
-		header_y = table_top + 120
-		col_clan = pad
-		col_score = width - pad - 360
-		col_w = width - pad - 240
-		col_l = width - pad - 120
-		row_h = 74
-
-		draw.text((col_clan, header_y), "Clan", font=font_med, fill=(190, 200, 220, 255))
-		draw.text((col_score, header_y), "Score", font=font_med, fill=(190, 200, 220, 255))
-		draw.text((col_w, header_y), "Win", font=font_med, fill=(190, 200, 220, 255))
-		draw.text((col_l, header_y), "Loss", font=font_med, fill=(190, 200, 220, 255))
-		draw.line((pad, header_y + 56, width - pad, header_y + 56), fill=(60, 70, 92, 255), width=2)
-
-		start_y = header_y + 80
-		max_rows = 16
-		for i, r in enumerate(rows[:max_rows], start=1):
-			y = start_y + (i - 1) * row_h
-			bg = (22, 26, 36, 255) if i % 2 == 1 else (18, 22, 32, 255)
-			draw.rounded_rectangle(
-				(pad, y - 8, width - pad, y + row_h - 8),
-				radius=16,
-				fill=bg,
-				outline=(38, 44, 60, 255),
-				width=2,
-			)
-			name = str(r["name"])
-			name = (name[:18] + "…") if len(name) > 19 else name
-			draw.text((col_clan + 10, y), f"{i}. {name}", font=font_med, fill=(235, 239, 245, 255))
-			draw.text((col_score + 20, y), str(r["score"]), font=font_med, fill=(235, 239, 245, 255))
-			draw.text((col_w + 20, y), str(r["w"]), font=font_med, fill=(235, 239, 245, 255))
-			draw.text((col_l + 20, y), str(r["l"]), font=font_med, fill=(235, 239, 245, 255))
-
-		out_path = data_path("scoreboard.png")
-		base.save(out_path, format="PNG")
-		return out_path
+	# (No Pillow rendering: leaderboard uses the static IMAGE_TEMPLATE_PATH)
 
 
 	def _admin_check(self, interaction: discord.Interaction) -> bool:
