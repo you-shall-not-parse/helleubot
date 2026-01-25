@@ -440,24 +440,36 @@ class ScoreSelect(discord.ui.Select):
 		)
 
 	def set_matchup(self, opponent_clan_role_id: Optional[int]) -> None:
+		# Preserve current selection if possible.
+		selected_value = None
+		if self.view is not None and hasattr(self.view, "selected_score"):
+			selected_value = getattr(self.view, "selected_score")
+
 		if opponent_clan_role_id is None:
 			self.disabled = True
-			self.options = [discord.SelectOption(label="Pick an opponent first", value="0-5")]
+			self.placeholder = "Select the match score…"
+			self.options = [discord.SelectOption(label="Pick an opponent first", value="0-5", default=True)]
 			return
 		a_name = _role_name_from_id(self.submitter_clan_role_id)
 		b_name = _role_name_from_id(opponent_clan_role_id)
 		self.disabled = False
-		self.options = [
-			discord.SelectOption(
-				label=f"{a_name} - {b_name} ({a}-{b})",
-				value=f"{a}-{b}",
-			)
-			for a, b in _score_options()
-		]
+		options: list[discord.SelectOption] = []
+		selected_label: Optional[str] = None
+		for a, b in _score_options():
+			value = f"{a}-{b}"
+			label = f"{a_name} - {b_name} ({a}-{b})"
+			is_default = selected_value == value
+			if is_default:
+				selected_label = label
+			options.append(discord.SelectOption(label=label, value=value, default=is_default))
+		self.options = options
+		self.placeholder = selected_label or "Select the match score…"
 
 	async def callback(self, interaction: discord.Interaction):
 		view: "SubmitFlowView" = self.view  # type: ignore[assignment]
 		view.selected_score = str(self.values[0])
+		# Make the selected score "stick" visually.
+		self.set_matchup(view.opponent_clan_role_id)
 		view._refresh_submit_button_state()
 		await interaction.response.edit_message(view=view)
 
@@ -791,9 +803,10 @@ class ScoreboardCog(commands.Cog):
 		col_idx = margin + int(w * 0.02)
 		col_name = margin + int(w * 0.12)
 		# Evenly space numeric columns in a fixed right-side band
-		# Shift the numeric band left a touch so Score doesn't crowd W.
+		# Widen the numeric band so Score / W / L have more breathing room.
+		# (This also nudges Score a bit further left.)
 		numeric_right = w - margin - int(w * 0.07)
-		numeric_left = w - margin - int(w * 0.46)
+		numeric_left = w - margin - int(w * 0.54)
 		segment = max(1, (numeric_right - numeric_left) / 3)
 		col_score = int(numeric_left + segment * 0.5)
 		col_w = int(numeric_left + segment * 1.5)
@@ -1111,6 +1124,37 @@ class ScoreboardCog(commands.Cog):
 		await self.ensure_scoreboard_message()
 		await self.ensure_leaderboard_message()
 		await interaction.followup.send("Scoreboard + leaderboard repaired.", ephemeral=True)
+
+	@app_commands.guilds(discord.Object(id=GUILD_ID))
+	@app_commands.command(name="scoreboard_admin_reset", description="Admin: reset leaderboard and clear latest result")
+	@app_commands.check(_admin_app_command_check)
+	async def scoreboard_admin_reset(self, interaction: discord.Interaction):
+		await interaction.response.defer(ephemeral=True)
+
+		# Reset clan stats
+		stats: dict[str, Any] = self.store.data.setdefault("clan_stats", {})
+		for clan_name, role_id in CLAN_ROLES.items():
+			key = str(role_id)
+			stats[key] = {
+				"name": clan_name,
+				"w": 0,
+				"l": 0,
+				"played": 0,
+				"maps_for": 0,
+				"maps_against": 0,
+			}
+		self.store.data["clan_stats"] = stats
+
+		# Clear latest result so the image shows NO RESULTS YET
+		self.store.data["last_result"] = None
+
+		# Optional: clear pending matches (fresh season)
+		self.store.data["pending_matches"] = {}
+		self.store.data["pending_by_validation_message"] = {}
+
+		await self.store.save()
+		await self.ensure_leaderboard_message()
+		await interaction.followup.send("Leaderboard reset and latest result cleared.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
