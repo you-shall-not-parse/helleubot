@@ -463,61 +463,21 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 	embed.add_field(name="Round Window", value=_format_round_window(s.round_no), inline=False)
 
 	# Date/time (status + history)
-	if s.agreed_datetime_utc:
-		try:
-			ts = int(datetime.fromisoformat(s.agreed_datetime_utc).replace(tzinfo=timezone.utc).timestamp())
-			dt_status = f"Locked: <t:{ts}:F>"
-		except Exception:
-			dt_status = f"Locked: {s.agreed_datetime_utc}"
-	elif s.proposed_datetime_utc:
-		try:
-			ts = int(datetime.fromisoformat(s.proposed_datetime_utc).replace(tzinfo=timezone.utc).timestamp())
-			dt_status = f"Latest proposal: <t:{ts}:F> (by {s.proposed_datetime_by})"
-		except Exception:
-			dt_status = f"Latest proposal: {s.proposed_datetime_utc} (by {s.proposed_datetime_by})"
-	else:
-		dt_status = "No proposal yet"
-
 	dt_hist = _history_lines(s.datetime_history, kind="dt")
-	embed.add_field(name="Date/Time", value=f"{dt_status}\n```\n{dt_hist}\n```", inline=False)
+	embed.add_field(name="Date/Time", value=f"```\n{dt_hist}\n```", inline=False)
 
 	# Team size (status + history)
-	if s.agreed_team_size:
-		size_status = f"Locked: {s.agreed_team_size} vs {s.agreed_team_size}"
-	elif s.proposed_team_size:
-		size_status = f"Latest proposal: {s.proposed_team_size} vs {s.proposed_team_size} (by {s.proposed_team_size_by})"
-	else:
-		size_status = "No proposal yet"
-
 	size_hist = _history_lines(s.team_size_history, kind="size")
-	embed.add_field(name="Team Size", value=f"{size_status}\n```\n{size_hist}\n```", inline=False)
+	embed.add_field(name="Team Size", value=f"```\n{size_hist}\n```", inline=False)
 
 	# Map/midpoint (status + history)
 	rerolls_line = f"Rerolls: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
-	if s.current_map and s.current_midpoint:
-		map_status = f"Locked: {s.current_map} — Midpoint: {s.current_midpoint}"
-	elif s.proposed_map and s.proposed_midpoint:
-		map_status = f"Latest proposal: {s.proposed_map} — Midpoint: {s.proposed_midpoint} (by {s.proposed_map_by})"
-	else:
-		map_status = "No proposal yet"
-
 	map_hist = _history_lines(s.map_history, kind="map")
-	embed.add_field(name="Map & Midpoint", value=f"{map_status}\n{rerolls_line}\n```\n{map_hist}\n```", inline=False)
+	embed.add_field(name="Map & Midpoint", value=f"```\n{rerolls_line}\n{map_hist}\n```", inline=False)
 
 	# Sides (status + history)
-	if s.sides_allies and s.sides_axis:
-		by = f" (by {s.sides_decided_by})" if s.sides_decided_by else ""
-		sides_status = f"Locked: Allies {s.sides_allies} / Axis {s.sides_axis}{by}"
-	elif s.proposed_sides_allies and s.proposed_sides_axis:
-		sides_status = (
-			f"Latest proposal: Allies {s.proposed_sides_allies} / Axis {s.proposed_sides_axis}"
-			f" (by {s.proposed_sides_by})"
-		)
-	else:
-		sides_status = "No proposal yet"
-
 	sides_hist = _history_lines(s.sides_history, kind="sides")
-	embed.add_field(name="Sides", value=f"{sides_status}\n```\n{sides_hist}\n```", inline=False)
+	embed.add_field(name="Sides", value=f"```\n{sides_hist}\n```", inline=False)
 
 	if s.scheduled_event_id:
 		embed.add_field(name="Discord Event", value=f"Created (ID: {s.scheduled_event_id})", inline=False)
