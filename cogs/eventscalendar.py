@@ -36,7 +36,11 @@ EVENTS_DISPLAY_STATE_PATH = data_path("levents_display_state.json")
 # -----------------------------
 # EVENT THREADS (AUTO)
 # -----------------------------
-# When a new scheduled event is created, the bot will create a thread in this channel.
+# Toggle: create a discussion thread when a scheduled event is created.
+# Set to False to disable thread creation completely.
+ENABLE_EVENT_THREADS = False
+
+# When enabled, the bot will create a thread in this channel.
 # Default: use the same channel as the calendar embed.
 EVENT_THREADS_PARENT_CHANNEL_ID = 1462382488784470181
 
@@ -79,7 +83,7 @@ class EventDisplayCog(commands.Cog):
         self._target_guild_id: Optional[int] = None
         self._update_lock = asyncio.Lock()
         self._debounce_task: Optional[asyncio.Task] = None
-        self._thread_state = self._load_thread_state()
+        self._thread_state: Optional[dict] = self._load_thread_state() if ENABLE_EVENT_THREADS else None
         self.update_events_display.start()
         logger.info("EventDisplayCog initialized")
 
@@ -103,9 +107,12 @@ class EventDisplayCog(commands.Cog):
 
         # On startup, establish the target guild and optionally create threads for any
         # events that appeared while the bot was offline.
-        await self._startup_sync_threads()
+        if ENABLE_EVENT_THREADS:
+            await self._startup_sync_threads()
 
     def _load_thread_state(self) -> dict:
+        if not ENABLE_EVENT_THREADS:
+            return {"initialized": False, "seen_event_ids": [], "threads": {}}
         try:
             if not os.path.exists(EVENTS_THREAD_STATE_PATH):
                 return {"initialized": False, "seen_event_ids": [], "threads": {}}
@@ -122,7 +129,11 @@ class EventDisplayCog(commands.Cog):
             return {"initialized": False, "seen_event_ids": [], "threads": {}}
 
     def _save_thread_state(self) -> None:
+        if not ENABLE_EVENT_THREADS:
+            return
         try:
+            if not isinstance(self._thread_state, dict):
+                return
             self._thread_state["updated_at"] = datetime.utcnow().isoformat()
             with open(EVENTS_THREAD_STATE_PATH, "w", encoding="utf-8") as f:
                 json.dump(self._thread_state, f, indent=2, ensure_ascii=False)
@@ -130,15 +141,22 @@ class EventDisplayCog(commands.Cog):
             logger.warning("Failed to persist events thread state.", exc_info=True)
 
     def _is_event_seen(self, event_id: int) -> bool:
+        if not (ENABLE_EVENT_THREADS and isinstance(self._thread_state, dict)):
+            return True
         return str(event_id) in set(map(str, self._thread_state.get("seen_event_ids", [])))
 
     def _mark_event_seen(self, event_id: int) -> None:
+        if not (ENABLE_EVENT_THREADS and isinstance(self._thread_state, dict)):
+            return
         seen = set(map(str, self._thread_state.get("seen_event_ids", [])))
         seen.add(str(event_id))
         self._thread_state["seen_event_ids"] = sorted(seen)
 
     async def _startup_sync_threads(self) -> None:
         """Initialize thread state and handle events created while offline."""
+
+        if not (ENABLE_EVENT_THREADS and isinstance(self._thread_state, dict)):
+            return
 
         try:
             channel = self.bot.get_channel(EVENT_DISPLAY_CHANNEL_ID)
@@ -172,6 +190,8 @@ class EventDisplayCog(commands.Cog):
             logger.warning("Startup thread sync failed.", exc_info=True)
 
     async def _create_event_thread(self, scheduled_event: discord.ScheduledEvent) -> None:
+        if not (ENABLE_EVENT_THREADS and isinstance(self._thread_state, dict)):
+            return
         parent = self.bot.get_channel(EVENT_THREADS_PARENT_CHANNEL_ID)
         if not isinstance(parent, discord.TextChannel):
             logger.warning("Thread parent channel is missing or not a text channel")
@@ -318,7 +338,8 @@ class EventDisplayCog(commands.Cog):
                 # Fetch scheduled events
                 events = await guild.fetch_scheduled_events(with_counts=True)
 
-                # Filter for only scheduled (future) or active (live) events
+                # Filter for only scheduled (future) or active (live) events.
+                # Cancelled events are excluded, so they disappear from the calendar on refresh.
                 filtered_events = [
                     e for e in events
                     if e.status in (discord.EventStatus.scheduled, discord.EventStatus.active)
@@ -385,15 +406,16 @@ class EventDisplayCog(commands.Cog):
         if self._target_guild_id and scheduled_event.guild_id != self._target_guild_id:
             return
 
-        # If we haven't initialized yet (race at startup), sync once.
-        if not self._thread_state.get("initialized", False):
-            await self._startup_sync_threads()
+        if ENABLE_EVENT_THREADS:
+            # If we haven't initialized yet (race at startup), sync once.
+            if isinstance(self._thread_state, dict) and not self._thread_state.get("initialized", False):
+                await self._startup_sync_threads()
 
-        # Only create a thread once per event.
-        if not self._is_event_seen(scheduled_event.id):
-            await self._create_event_thread(scheduled_event)
-            self._mark_event_seen(scheduled_event.id)
-            self._save_thread_state()
+            # Only create a thread once per event.
+            if not self._is_event_seen(scheduled_event.id):
+                await self._create_event_thread(scheduled_event)
+                self._mark_event_seen(scheduled_event.id)
+                self._save_thread_state()
 
         self._debounced_refresh()
 
@@ -481,11 +503,12 @@ class EventDisplayCog(commands.Cog):
         else:
             for event in events:
                 thread_url: Optional[str] = None
-                thread_info = self._thread_state.get("threads", {}).get(str(event.id))
-                if isinstance(thread_info, dict):
-                    thread_id = thread_info.get("thread_id")
-                    if isinstance(thread_id, int):
-                        thread_url = f"https://discord.com/channels/{guild.id}/{thread_id}"
+                if ENABLE_EVENT_THREADS and isinstance(self._thread_state, dict):
+                    thread_info = self._thread_state.get("threads", {}).get(str(event.id))
+                    if isinstance(thread_info, dict):
+                        thread_id = thread_info.get("thread_id")
+                        if isinstance(thread_id, int):
+                            thread_url = f"https://discord.com/channels/{guild.id}/{thread_id}"
 
                 # Format the event time
                 start_time_str = (
@@ -551,7 +574,7 @@ class EventDisplayCog(commands.Cog):
                             field_value += f"\n**Details:** {description}"
 
                 elif thread_url:
-                    # No description, but still provide a link to the event thread.
+                    # No description, but still provide a link to the event thread (if enabled).
                     field_value += f"\n**[Details]({thread_url})**"
 
                 embed.add_field(
