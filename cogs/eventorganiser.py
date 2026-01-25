@@ -3,7 +3,7 @@ import json
 import os
 import random
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 
@@ -86,8 +86,8 @@ MIDPOINTS_BY_MAP: dict[str, list[str]] = {
 	"Mortain": ["<Mortain mid 1>", "<Mortain mid 2>", "<Mortain mid 3>"],
 }
 
-# Veto limit per clan
-VETO_LIMIT = 3
+# Max map+mid rerolls ("mix-ups") per clan
+REROLL_LIMIT = 3
 
 # Where we persist state
 STATE_PATH = data_path("fixture_organiser_state.json")
@@ -221,26 +221,33 @@ class FixtureState:
 	clan_b: str
 	round_no: int
 
+	# Message inside the thread that holds the single "control embed" we keep editing.
+	control_message_id: Optional[int] = None
+
 	# proposals
 	proposed_datetime_utc: Optional[str] = None
 	proposed_datetime_by: Optional[str] = None
+	datetime_history: list[dict[str, Any]] = field(default_factory=list)
 
 	agreed_datetime_utc: Optional[str] = None
 
 	proposed_team_size: Optional[int] = None
 	proposed_team_size_by: Optional[str] = None
+	team_size_history: list[dict[str, Any]] = field(default_factory=list)
 	agreed_team_size: Optional[int] = None
 
 	current_map: Optional[str] = None
 	current_midpoint: Optional[str] = None
 	map_proposed_by: Optional[str] = None
 
-	pending_veto_by: Optional[str] = None
-	veto_count_a: int = 0
-	veto_count_b: int = 0
+	# Map/midpoint rerolls ("mix-ups")
+	reroll_count_a: int = 0
+	reroll_count_b: int = 0
+	last_map_roll_by: Optional[str] = None
 
 	sides_allies: Optional[str] = None
 	sides_axis: Optional[str] = None
+	sides_decided_by: Optional[str] = None
 
 	scheduled_event_id: Optional[int] = None
 
@@ -376,12 +383,12 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 		title="Fixture Organisation",
 		description=(
 			"Use the buttons below to organise the fixture end-to-end.\n"
-			"1) Propose date/time (must be within the round window)\n"
-			"2) Agree/counter until locked\n"
-			"3) Propose team size (30-50, equal sizes)\n"
-			"4) Roll map and midpoint, then optional veto workflow\n"
-			"5) Randomly assign sides (Allies/Axis)\n"
-			"6) Create the Discord event when ready!"
+			"1. Propose date/time (must be within the round window)\n"
+			"2. Agree/counter until locked\n"
+			"3. Propose team size (30-50, equal sizes)\n"
+			"4. Roll map and midpoint, then optional veto workflow\n"
+			"5. Randomly assign sides (Allies/Axis)\n"
+			"6. Create the Discord event when ready!"
 		),
 		color=discord.Color.blurple(),
 	)
