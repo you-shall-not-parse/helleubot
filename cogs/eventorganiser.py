@@ -423,7 +423,7 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 		description=(
 			"Use the buttons below to organise the fixture end-to-end.\n"
 			"1. Propose date/time (must be within the round window)\n"
-			"2. Agree/counter until locked\n"
+			"2. Propose until agreed\n"
 			"3. Propose team size (30-50, equal sizes)\n"
 			"4. Roll map + midpoint (first roll by Clan A; then each clan can reroll up to 3 times)\n"
 			"5. Decide sides (once; must be done by the clan that did NOT do the last map roll)\n"
@@ -715,10 +715,9 @@ class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
 		max_length=64,
 	)
 
-	def __init__(self, thread_id: int, mode: str):
+	def __init__(self, thread_id: int):
 		super().__init__()
 		self.thread_id = thread_id
-		self.mode = mode  # propose or counter
 
 	async def on_submit(self, interaction: discord.Interaction):
 		if interaction.guild is None or not isinstance(interaction.user, discord.Member):
@@ -759,7 +758,7 @@ class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
 		s.datetime_history.append(
 			{
 				"by": user_clan,
-				"action": "countered" if self.mode == "counter" else "proposed",
+				"action": "proposed",
 				"dt": s.proposed_datetime_utc,
 			}
 		)
@@ -856,7 +855,7 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, _ = res
-		await interaction.response.send_modal(DateTimeModal(thread_id=s.thread_id, mode="propose"))
+		await interaction.response.send_modal(DateTimeModal(thread_id=s.thread_id))
 
 	@discord.ui.button(label="Accept date/time", style=discord.ButtonStyle.success, custom_id="fixture:dt_accept")
 	async def accept_datetime(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -881,17 +880,6 @@ class FixtureThreadView(discord.ui.View):
 		_save_state(st)
 		await interaction.response.send_message("Date/time agreed.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
-
-	@discord.ui.button(label="Counter date/time", style=discord.ButtonStyle.secondary, custom_id="fixture:dt_counter")
-	async def counter_datetime(self, interaction: discord.Interaction, button: discord.ui.Button):
-		res = await self._require_member(interaction)
-		if not res:
-			return
-		s, clan = res
-		if s.proposed_datetime_by and clan == s.proposed_datetime_by:
-			await interaction.response.send_message("Wait for the other clan to respond.", ephemeral=True)
-			return
-		await interaction.response.send_modal(DateTimeModal(thread_id=s.thread_id, mode="counter"))
 
 	@discord.ui.button(label="Propose team size", style=discord.ButtonStyle.primary, custom_id="fixture:size_propose")
 	async def propose_size(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1205,7 +1193,7 @@ class EventOrganiser(commands.Cog):
 			description=(
 			    "Use the buttons below to organise the fixture end-to-end.\n"
 			    "1. Propose date/time (must be within the round window)\n"
-			    "2. Agree/counter until locked\n"
+			    "2. Propose until agreed\n"
 			    "3. Propose team size (30-50, equal sizes)\n"
 			    "4. Roll map + midpoint (first roll by Clan A; then each clan can reroll up to 3 times)\n"
 			    "5. Decide sides (once)\n"
