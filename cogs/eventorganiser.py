@@ -18,6 +18,14 @@ from data_paths import data_path
 
 GUILD_ID = 1462382487622914079
 
+# Feature toggles
+# Set these to False to disable the related controls and requirements.
+ENABLE_MAP_MIDPOINT = False
+ENABLE_SIDES = True
+
+# If ENABLE_SIDES is False (or sides aren't set), we still need a location for external events.
+EVENT_LOCATION_FALLBACK = "TBD Server"
+
 # Channel where the “Organise Fixture” embed is posted.
 ORGANISER_EMBED_CHANNEL_ID = 1464726144367464685
 
@@ -370,17 +378,23 @@ def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None
 			parts.append(f"Start (UTC): {s.agreed_datetime_utc}")
 	if s.agreed_team_size:
 		parts.append(f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}")
-	if s.current_map:
-		parts.append(f"Map: {s.current_map}")
-	if s.current_midpoint:
-		parts.append(f"Midpoint: {s.current_midpoint}")
-	if s.sides_allies and s.sides_axis:
-		parts.append(f"Allies: {s.sides_allies}")
-		parts.append(f"Axis: {s.sides_axis}")
-	if s.server_host:
-		parts.append(f"Server host: {s.server_host} Server")
-	parts.append(f"Map rerolls used: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}")
-	parts.append(f"Sides rerolls used: {s.clan_a} {s.sides_reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.sides_reroll_count_b}/{REROLL_LIMIT}")
+	if ENABLE_MAP_MIDPOINT:
+		if s.current_map:
+			parts.append(f"Map: {s.current_map}")
+		if s.current_midpoint:
+			parts.append(f"Midpoint: {s.current_midpoint}")
+		parts.append(
+			f"Map rerolls used: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
+		)
+	if ENABLE_SIDES:
+		if s.sides_allies and s.sides_axis:
+			parts.append(f"Allies: {s.sides_allies}")
+			parts.append(f"Axis: {s.sides_axis}")
+		if s.server_host:
+			parts.append(f"Server host: {s.server_host} Server")
+		parts.append(
+			f"Sides rerolls used: {s.clan_a} {s.sides_reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.sides_reroll_count_b}/{REROLL_LIMIT}"
+		)
 	parts.append(f"Thread: <#{s.thread_id}>")
 	if event_url:
 		parts.append(f"Event: {event_url}")
@@ -495,14 +509,16 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 	embed.add_field(name="Team Size", value=f"```\n{size_hist}\n```", inline=False)
 
 	# Map/midpoint (status + history)
-	rerolls_line = f"Map rerolls: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
-	map_hist = _history_lines(s.map_history, kind="map")
-	embed.add_field(name="Map & Midpoint", value=f"```\n{rerolls_line}\n{map_hist}\n```", inline=False)
+	if ENABLE_MAP_MIDPOINT:
+		rerolls_line = f"Map rerolls: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
+		map_hist = _history_lines(s.map_history, kind="map")
+		embed.add_field(name="Map & Midpoint", value=f"```\n{rerolls_line}\n{map_hist}\n```", inline=False)
 
 	# Sides (status + history)
-	sides_rerolls_line = f"Sides rerolls: {s.clan_a} {s.sides_reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.sides_reroll_count_b}/{REROLL_LIMIT}"
-	sides_hist = _history_lines(s.sides_history, kind="sides")
-	embed.add_field(name="Sides", value=f"```\n{sides_rerolls_line}\n{sides_hist}\n```", inline=False)
+	if ENABLE_SIDES:
+		sides_rerolls_line = f"Sides rerolls: {s.clan_a} {s.sides_reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.sides_reroll_count_b}/{REROLL_LIMIT}"
+		sides_hist = _history_lines(s.sides_history, kind="sides")
+		embed.add_field(name="Sides", value=f"```\n{sides_rerolls_line}\n{sides_hist}\n```", inline=False)
 
 	if s.scheduled_event_id:
 		embed.add_field(name="Discord Event", value=f"Created (ID: {s.scheduled_event_id})", inline=False)
@@ -848,6 +864,21 @@ class FixtureThreadView(discord.ui.View):
 		super().__init__(timeout=None)
 		self.thread_id = thread_id
 
+		# Remove disabled feature buttons from the UI.
+		# (The handlers still exist for safety, but users won't see/click the buttons.)
+		if not ENABLE_MAP_MIDPOINT:
+			try:
+				self.remove_item(self.roll_map)
+				self.remove_item(self.accept_map)
+			except Exception:
+				pass
+		if not ENABLE_SIDES:
+			try:
+				self.remove_item(self.propose_sides)
+				self.remove_item(self.accept_sides)
+			except Exception:
+				pass
+
 	async def _get_state(self) -> Optional[FixtureState]:
 		state = _load_state()
 		raw = state.get("threads", {}).get(str(self.thread_id))
@@ -939,6 +970,9 @@ class FixtureThreadView(discord.ui.View):
 
 	@discord.ui.button(label="Roll / Mix-up map+mid", style=discord.ButtonStyle.primary, custom_id="fixture:map_roll")
 	async def roll_map(self, interaction: discord.Interaction, button: discord.ui.Button):
+		if not ENABLE_MAP_MIDPOINT:
+			await interaction.response.send_message("Map/midpoint is disabled by config.", ephemeral=True)
+			return
 		res = await self._require_member(interaction)
 		if not res:
 			return
@@ -989,6 +1023,9 @@ class FixtureThreadView(discord.ui.View):
 
 	@discord.ui.button(label="Accept map+mid", style=discord.ButtonStyle.success, custom_id="fixture:map_accept")
 	async def accept_map(self, interaction: discord.Interaction, button: discord.ui.Button):
+		if not ENABLE_MAP_MIDPOINT:
+			await interaction.response.send_message("Map/midpoint is disabled by config.", ephemeral=True)
+			return
 		res = await self._require_member(interaction)
 		if not res:
 			return
@@ -1019,6 +1056,9 @@ class FixtureThreadView(discord.ui.View):
 
 	@discord.ui.button(label="Propose sides (coin flip)", style=discord.ButtonStyle.primary, custom_id="fixture:sides_propose")
 	async def propose_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
+		if not ENABLE_SIDES:
+			await interaction.response.send_message("Sides is disabled by config.", ephemeral=True)
+			return
 		res = await self._require_member(interaction)
 		if not res:
 			return
@@ -1055,6 +1095,9 @@ class FixtureThreadView(discord.ui.View):
 
 	@discord.ui.button(label="Accept sides", style=discord.ButtonStyle.success, custom_id="fixture:sides_accept")
 	async def accept_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
+		if not ENABLE_SIDES:
+			await interaction.response.send_message("Sides is disabled by config.", ephemeral=True)
+			return
 		res = await self._require_member(interaction)
 		if not res:
 			return
@@ -1104,13 +1147,13 @@ class FixtureThreadView(discord.ui.View):
 		if not s.agreed_team_size:
 			await interaction.followup.send("Agree the team size first.", ephemeral=True)
 			return
-		if not (s.current_map and s.current_midpoint):
+		if ENABLE_MAP_MIDPOINT and not (s.current_map and s.current_midpoint):
 			await interaction.followup.send("Roll map/midpoint first.", ephemeral=True)
 			return
-		if not (s.sides_allies and s.sides_axis):
+		if ENABLE_SIDES and not (s.sides_allies and s.sides_axis):
 			await interaction.followup.send("Decide sides first.", ephemeral=True)
 			return
-		if not s.server_host:
+		if ENABLE_SIDES and not s.server_host:
 			await interaction.followup.send("Select sides first (server host is chosen with the coin flip).", ephemeral=True)
 			return
 		if interaction.guild is None:
@@ -1128,15 +1171,20 @@ class FixtureThreadView(discord.ui.View):
 		start_dt = start_dt.astimezone(timezone.utc)
 		end_dt = start_dt + timedelta(hours=2)
 
-		desc = (
-			f"Round: {s.round_no} ({_format_round_window(s.round_no)})\n"
-			f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}\n"
-			f"Map: {s.current_map}\n"
-			f"Midpoint: {s.current_midpoint}\n"
-			f"Allies: {s.sides_allies}\n"
-			f"Axis: {s.sides_axis}\n"
-			f"Thread: <#{s.thread_id}>"
-		)
+		desc_lines: list[str] = [
+			f"Round: {s.round_no} ({_format_round_window(s.round_no)})",
+			f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}",
+		]
+		if ENABLE_MAP_MIDPOINT and s.current_map and s.current_midpoint:
+			desc_lines.append(f"Map: {s.current_map}")
+			desc_lines.append(f"Midpoint: {s.current_midpoint}")
+		if ENABLE_SIDES and s.sides_allies and s.sides_axis:
+			desc_lines.append(f"Allies: {s.sides_allies}")
+			desc_lines.append(f"Axis: {s.sides_axis}")
+		desc_lines.append(f"Thread: <#{s.thread_id}>")
+		desc = "\n".join(desc_lines)
+
+		location = f"{s.server_host} Server" if s.server_host else EVENT_LOCATION_FALLBACK
 
 		try:
 			if SCHEDULED_EVENT_CHANNEL_ID:
@@ -1156,7 +1204,11 @@ class FixtureThreadView(discord.ui.View):
 						else discord.EntityType.voice
 					),
 					channel=channel,
-					description=f"{desc}\n**Server host:** {s.server_host} Server",
+					description=(
+						f"{desc}\n**Server host:** {location}"
+						if location
+						else desc
+					),
 				)
 			else:
 				ev = await guild.create_scheduled_event(
@@ -1165,7 +1217,7 @@ class FixtureThreadView(discord.ui.View):
 					end_time=end_dt,
 					privacy_level=discord.PrivacyLevel.guild_only,
 					entity_type=discord.EntityType.external,
-					location=f"{s.server_host} Server",
+					location=location,
 					description=desc,
 				)
 		except discord.Forbidden:
@@ -1281,15 +1333,21 @@ class EventOrganiser(commands.Cog):
 		if not isinstance(channel, discord.TextChannel):
 			return
 
+		steps: list[str] = [
+			"- Click the button below to organise the fixture end-to-end.",
+			"- Propose date/time (must be within the round window)",
+			"- Propose team size (30-50, equal sizes)",
+		]
+		if ENABLE_MAP_MIDPOINT:
+			steps.append("- Roll map & midpoint (first roll is free, then each clan can reroll up to 3 times)")
+		if ENABLE_SIDES:
+			steps.append("- Decide sides with a random chance")
+		steps.append("- Create the Discord event when done!")
+
 		embed = discord.Embed(
 			title="Fixture Organiser",
 			description=(
-			    "- Click the button below to organise the fixture end-to-end.\n"
-		        "- Propose date/time (must be within the round window)\n"
-			    "- Propose team size (30-50, equal sizes)\n"
-			    "- Roll map & midpoint (first roll is free, then each clan can reroll up to 3 times)\n"
-			    "- Decide sides with a random chance\n"
-			    "- Create the Discord event when done!"
+			    "\n".join(steps)
 			),
 			color=discord.Color.blurple(),
 		)
