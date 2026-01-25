@@ -498,7 +498,11 @@ class OpponentSelect(discord.ui.Select):
 	async def callback(self, interaction: discord.Interaction):
 		view = self.view
 		if isinstance(view, OpponentRoundView) and self.values:
-			view.opponent_clan = self.values[0]
+			selected = self.values[0]
+			view.opponent_clan = selected
+			# Persist the selection visually when we edit the message.
+			for opt in self.options:
+				opt.default = (opt.value == selected)
 			# Acknowledge the selection to avoid "This interaction failed".
 			await interaction.response.edit_message(view=view)
 			return
@@ -521,10 +525,13 @@ class RoundSelect(discord.ui.Select):
 	async def callback(self, interaction: discord.Interaction):
 		view = self.view
 		if isinstance(view, OpponentRoundView) and self.values:
+			selected = self.values[0]
 			try:
-				view.round_no = int(self.values[0])
+				view.round_no = int(selected)
 			except Exception:
 				view.round_no = None
+			for opt in self.options:
+				opt.default = (opt.value == selected)
 			await interaction.response.edit_message(view=view)
 			return
 		await interaction.response.defer()
@@ -566,8 +573,7 @@ class CreateThreadButton(discord.ui.Button):
 
 		# Create a private thread so only invited members can see.
 		try:
-			starter = await parent.send(f"Creating fixture thread for **{requester_clan} vs {opponent_clan}**...")
-			thread = await starter.create_thread(
+			thread = await parent.create_thread(
 				name=thread_name,
 				type=discord.ChannelType.private_thread,
 				auto_archive_duration=10080,
