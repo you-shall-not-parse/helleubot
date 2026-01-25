@@ -134,42 +134,36 @@ def _format_round_window(round_no: int) -> str:
 	return f"{start_str} - {end_str}"
 
 
-def _parse_datetime_utc(text: str) -> datetime:
-	"""Parse user input into an aware UTC datetime.
+def _parse_datetime_utc(date_text: str, time_text: str) -> datetime:
+	"""Parse form inputs into an aware UTC datetime.
 
-	Supported:
-	  - DD-MM-YYYY HH:MM
-	  - DD-MM-YYYYTHH:MM
-	  - DD-MM-YYYY HH:MMZ / ...+00:00
+	Expected:
+	  - Date: DD/MM/YYYY (also accepts DD-MM-YYYY)
+	  - Time: HH:MM
 
-	If no timezone is supplied, assumes UTC.
+	Assumes UTC.
 	"""
 
-	raw = text.strip()
-	if not raw:
+	raw_date = str(date_text or "").strip()
+	raw_time = str(time_text or "").strip()
+	if not raw_date or not raw_time:
 		raise ValueError("Empty datetime")
 
-	raw = raw.replace("/", "-")
-	raw = raw.replace("T", " ")
+	# Allow either / or - for the date separator.
+	raw_date = raw_date.replace("-", "/")
 
-	# ISO with timezone
-	try:
-		dt_obj = datetime.fromisoformat(raw)
-		if dt_obj.tzinfo is None:
-			dt_obj = dt_obj.replace(tzinfo=timezone.utc)
-		return dt_obj.astimezone(timezone.utc)
-	except Exception:
-		pass
+	if not re.match(r"^\d{2}/\d{2}/\d{4}$", raw_date):
+		raise ValueError("Invalid date format")
+	if not re.match(r"^\d{2}:\d{2}$", raw_time):
+		raise ValueError("Invalid time format")
 
-	# Simple "DD-MM-YYYY HH:MM" assumed UTC
-	m = re.match(r"^(\d{2}-\d{2}-\d{4})\s+(\d{2}:\d{2})$", raw)
-	if m:
-		dd, mon, yyyy = map(int, m.group(1).split("-"))
-		hh, mi = map(int, m.group(2).split(":"))
-		d = date(yyyy, mon, dd)
-		return datetime.combine(d, time(hh, mi, tzinfo=timezone.utc))
+	dd, mon, yyyy = map(int, raw_date.split("/"))
+	hh, mi = map(int, raw_time.split(":"))
+	if not (0 <= hh <= 23 and 0 <= mi <= 59):
+		raise ValueError("Invalid time")
 
-	raise ValueError("Invalid datetime format")
+	d = date(yyyy, mon, dd)
+	return datetime.combine(d, time(hh, mi, tzinfo=timezone.utc))
 
 
 def _within_round(round_no: int, dt_obj: datetime) -> bool:
@@ -238,12 +232,23 @@ class FixtureState:
 
 	current_map: Optional[str] = None
 	current_midpoint: Optional[str] = None
-	map_proposed_by: Optional[str] = None
+
+	# Map & midpoint negotiation
+	proposed_map: Optional[str] = None
+	proposed_midpoint: Optional[str] = None
+	proposed_map_by: Optional[str] = None
+	map_history: list[dict[str, Any]] = field(default_factory=list)
 
 	# Map/midpoint rerolls ("mix-ups")
 	reroll_count_a: int = 0
 	reroll_count_b: int = 0
 	last_map_roll_by: Optional[str] = None
+
+	# Sides negotiation
+	proposed_sides_allies: Optional[str] = None
+	proposed_sides_axis: Optional[str] = None
+	proposed_sides_by: Optional[str] = None
+	sides_history: list[dict[str, Any]] = field(default_factory=list)
 
 	sides_allies: Optional[str] = None
 	sides_axis: Optional[str] = None
@@ -277,10 +282,17 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"agreed_team_size": s.agreed_team_size,
 		"current_map": s.current_map,
 		"current_midpoint": s.current_midpoint,
-		"map_proposed_by": s.map_proposed_by,
+		"proposed_map": s.proposed_map,
+		"proposed_midpoint": s.proposed_midpoint,
+		"proposed_map_by": s.proposed_map_by,
+		"map_history": s.map_history,
 		"reroll_count_a": s.reroll_count_a,
 		"reroll_count_b": s.reroll_count_b,
 		"last_map_roll_by": s.last_map_roll_by,
+		"proposed_sides_allies": s.proposed_sides_allies,
+		"proposed_sides_axis": s.proposed_sides_axis,
+		"proposed_sides_by": s.proposed_sides_by,
+		"sides_history": s.sides_history,
 		"sides_allies": s.sides_allies,
 		"sides_axis": s.sides_axis,
 		"sides_decided_by": s.sides_decided_by,
@@ -307,10 +319,17 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		agreed_team_size=d.get("agreed_team_size"),
 		current_map=d.get("current_map"),
 		current_midpoint=d.get("current_midpoint"),
-		map_proposed_by=d.get("map_proposed_by"),
+		proposed_map=d.get("proposed_map"),
+		proposed_midpoint=d.get("proposed_midpoint"),
+		proposed_map_by=d.get("proposed_map_by"),
+		map_history=d.get("map_history") or [],
 		reroll_count_a=int(d.get("reroll_count_a", 0)),
 		reroll_count_b=int(d.get("reroll_count_b", 0)),
 		last_map_roll_by=d.get("last_map_roll_by"),
+		proposed_sides_allies=d.get("proposed_sides_allies"),
+		proposed_sides_axis=d.get("proposed_sides_axis"),
+		proposed_sides_by=d.get("proposed_sides_by"),
+		sides_history=d.get("sides_history") or [],
 		sides_allies=d.get("sides_allies"),
 		sides_axis=d.get("sides_axis"),
 		sides_decided_by=d.get("sides_decided_by"),
@@ -331,7 +350,7 @@ def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None
 			if dt.tzinfo is None:
 				dt = dt.replace(tzinfo=timezone.utc)
 			dt = dt.astimezone(timezone.utc)
-			parts.append(f"Start (UTC): {dt.strftime('%d-%m-%Y %H:%M')} UTC")
+			parts.append(f"Start (UTC): {dt.strftime('%d/%m/%Y %H:%M')} UTC")
 			parts.append(f"Start (Discord): <t:{int(dt.timestamp())}:F>")
 		except Exception:
 			parts.append(f"Start (UTC): {s.agreed_datetime_utc}")
@@ -388,7 +407,7 @@ def _format_dt_short(dt_iso: str) -> str:
 		if dt.tzinfo is None:
 			dt = dt.replace(tzinfo=timezone.utc)
 		dt = dt.astimezone(timezone.utc)
-		return dt.strftime("%d-%m-%Y %H:%M") + " UTC"
+		return dt.strftime("%d/%m/%Y %H:%M") + " UTC"
 	except Exception:
 		return dt_iso
 
@@ -408,6 +427,14 @@ def _history_lines(items: list[dict[str, Any]], *, kind: str, limit: int = 6) ->
 		elif kind == "size":
 			val = entry.get("size")
 			lines.append(f"- {by} {action}: {val}v{val}")
+		elif kind == "map":
+			m = entry.get("map")
+			mid = entry.get("mid")
+			lines.append(f"- {by} {action}: {m} / {mid}")
+		elif kind == "sides":
+			allies = entry.get("allies")
+			axis = entry.get("axis")
+			lines.append(f"- {by} {action}: Allies {allies} / Axis {axis}")
 		else:
 			lines.append(f"- {by} {action}")
 	return "\n".join(lines)
@@ -479,22 +506,39 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 
 	# Map/midpoint
 	rerolls_line = f"Rerolls: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
-	last_roll = f"Last roll: {s.last_map_roll_by}" if s.last_map_roll_by else "Last roll: (none)"
 	if s.current_map and s.current_midpoint:
 		embed.add_field(
-			name="Map & Midpoint",
-			value=f"{s.current_map} — Midpoint: {s.current_midpoint}\n{rerolls_line}\n{last_roll}",
+			name="Map & Midpoint (Locked)",
+			value=f"{s.current_map} — Midpoint: {s.current_midpoint}\n{rerolls_line}",
+			inline=False,
+		)
+	elif s.proposed_map and s.proposed_midpoint:
+		embed.add_field(
+			name="Map & Midpoint (Proposed)",
+			value=f"{s.proposed_map} — Midpoint: {s.proposed_midpoint} (by {s.proposed_map_by})\n{rerolls_line}",
 			inline=False,
 		)
 	else:
-		embed.add_field(name="Map & Midpoint", value=f"Not rolled yet\n{rerolls_line}", inline=False)
+		embed.add_field(name="Map & Midpoint", value=f"Not proposed yet\n{rerolls_line}", inline=False)
+
+	map_hist = _history_lines(s.map_history, kind="map")
+	embed.add_field(name="Map History", value=f"```\n{map_hist}\n```", inline=False)
 
 	# Sides
 	if s.sides_allies and s.sides_axis:
 		by = f" (by {s.sides_decided_by})" if s.sides_decided_by else ""
-		embed.add_field(name="Sides", value=f"Allies: {s.sides_allies}\nAxis: {s.sides_axis}{by}", inline=False)
+		embed.add_field(name="Sides (Locked)", value=f"Allies: {s.sides_allies}\nAxis: {s.sides_axis}{by}", inline=False)
+	elif s.proposed_sides_allies and s.proposed_sides_axis:
+		embed.add_field(
+			name="Sides (Proposed)",
+			value=f"Allies: {s.proposed_sides_allies}\nAxis: {s.proposed_sides_axis} (by {s.proposed_sides_by})",
+			inline=False,
+		)
 	else:
-		embed.add_field(name="Sides", value="Not decided yet", inline=False)
+		embed.add_field(name="Sides", value="Not proposed yet", inline=False)
+
+	sides_hist = _history_lines(s.sides_history, kind="sides")
+	embed.add_field(name="Sides History", value=f"```\n{sides_hist}\n```", inline=False)
 
 	if s.scheduled_event_id:
 		embed.add_field(name="Discord Event", value=f"Created (ID: {s.scheduled_event_id})", inline=False)
@@ -708,11 +752,17 @@ class OpponentRoundView(discord.ui.View):
 
 
 class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
-	when = discord.ui.TextInput(
-		label="Date/Time",
-		placeholder="DD-MM-YYYY HH:MM (UTC)",
+	date_field = discord.ui.TextInput(
+		label="Date",
+		placeholder="DD/MM/YYYY",
 		required=True,
-		max_length=64,
+		max_length=10,
+	)
+	time_field = discord.ui.TextInput(
+		label="Time (UTC)",
+		placeholder="HH:MM",
+		required=True,
+		max_length=5,
 	)
 
 	def __init__(self, thread_id: int):
@@ -731,16 +781,19 @@ class DateTimeModal(discord.ui.Modal, title="Propose Date/Time (UTC)"):
 			return
 
 		s = _dict_to_state(raw)
+		if s.agreed_datetime_utc:
+			await interaction.response.send_message("Date/time is already locked.", ephemeral=True)
+			return
 		user_clan = _find_user_clan(interaction.user)
 		if user_clan not in (s.clan_a, s.clan_b):
 			await interaction.response.send_message("You are not part of this fixture.", ephemeral=True)
 			return
 
 		try:
-			dt_utc = _parse_datetime_utc(str(self.when.value))
+			dt_utc = _parse_datetime_utc(str(self.date_field.value), str(self.time_field.value))
 		except ValueError:
 			await interaction.response.send_message(
-				"Invalid datetime. Use `DD-MM-YYYY HH:MM` (assumed UTC).",
+				"Invalid date/time. Use `DD/MM/YYYY` and `HH:MM` (UTC).",
 				ephemeral=True,
 			)
 			return
@@ -794,6 +847,9 @@ class TeamSizeModal(discord.ui.Modal, title="Propose Team Size"):
 			return
 
 		s = _dict_to_state(raw)
+		if s.agreed_team_size is not None:
+			await interaction.response.send_message("Team size is already locked.", ephemeral=True)
+			return
 		user_clan = _find_user_clan(interaction.user)
 		if user_clan not in (s.clan_a, s.clan_b):
 			await interaction.response.send_message("You are not part of this fixture.", ephemeral=True)
@@ -855,6 +911,9 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, _ = res
+		if s.agreed_datetime_utc:
+			await interaction.response.send_message("Date/time is already locked.", ephemeral=True)
+			return
 		await interaction.response.send_modal(DateTimeModal(thread_id=s.thread_id))
 
 	@discord.ui.button(label="Accept date/time", style=discord.ButtonStyle.success, custom_id="fixture:dt_accept")
@@ -887,6 +946,9 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, _ = res
+		if s.agreed_team_size is not None:
+			await interaction.response.send_message("Team size is already locked.", ephemeral=True)
+			return
 		await interaction.response.send_modal(TeamSizeModal(thread_id=s.thread_id))
 
 	@discord.ui.button(label="Accept team size", style=discord.ButtonStyle.success, custom_id="fixture:size_accept")
@@ -911,13 +973,18 @@ class FixtureThreadView(discord.ui.View):
 		await interaction.response.send_message("Team size agreed.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
-	@discord.ui.button(label="Roll / Reroll map+mid", style=discord.ButtonStyle.primary, custom_id="fixture:map_roll")
+	@discord.ui.button(label="Roll / Mix-up map+mid", style=discord.ButtonStyle.primary, custom_id="fixture:map_roll")
 	async def roll_map(self, interaction: discord.Interaction, button: discord.ui.Button):
 		res = await self._require_member(interaction)
 		if not res:
 			return
 		s, clan = res
-		is_first_roll = s.current_map is None
+		if s.scheduled_event_id:
+			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
+			return
+		if s.current_map and s.current_midpoint:
+			await interaction.response.send_message("Map/midpoint is already locked.", ephemeral=True)
+			return
 		if not MAP_POOL:
 			await interaction.response.send_message("MAP_POOL is empty.", ephemeral=True)
 			return
@@ -929,25 +996,11 @@ class FixtureThreadView(discord.ui.View):
 				ephemeral=True,
 			)
 			return
-		if s.scheduled_event_id:
-			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
-			return
-		if s.sides_allies or s.sides_axis:
-			await interaction.response.send_message("Sides are already decided; map rerolls are locked.", ephemeral=True)
-			return
-		# First roll is only allowed by the requester clan (Clan A) so they don't lose a reroll.
-		if is_first_roll and clan != s.clan_a:
-			await interaction.response.send_message(
-				f"Only {s.clan_a} can do the initial roll.",
-				ephemeral=True,
-			)
-			return
-		# After a roll exists, each clan can reroll up to the limit, and cannot reroll twice in a row.
-		if not is_first_roll and _reroll_count_for(s, clan) >= REROLL_LIMIT:
-			await interaction.response.send_message("You have used all rerolls.", ephemeral=True)
-			return
-		if s.last_map_roll_by and s.last_map_roll_by == clan:
-			await interaction.response.send_message("Wait for the other clan to roll next.", ephemeral=True)
+		# Each clan may request up to REROLL_LIMIT mix-ups before the map is accepted/locked.
+		# The initial roll doesn't consume a reroll; subsequent mix-ups do.
+		is_first_proposal = s.proposed_map is None
+		if not is_first_proposal and _reroll_count_for(s, clan) >= REROLL_LIMIT:
+			await interaction.response.send_message("You have used all mix-ups.", ephemeral=True)
 			return
 		try:
 			new_map, new_mid = _roll_map_and_midpoint()
@@ -957,20 +1010,21 @@ class FixtureThreadView(discord.ui.View):
 				ephemeral=True,
 			)
 			return
-		s.current_map = new_map
-		s.current_midpoint = new_mid
-		s.map_proposed_by = clan
+		s.proposed_map = new_map
+		s.proposed_midpoint = new_mid
+		s.proposed_map_by = clan
 		s.last_map_roll_by = clan
-		if not is_first_roll:
+		s.map_history.append({"by": clan, "action": "proposed", "map": new_map, "mid": new_mid})
+		if not is_first_proposal:
 			_inc_reroll(s, clan)
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await interaction.response.send_message("Map/midpoint updated.", ephemeral=True)
+		await interaction.response.send_message("Map/midpoint proposal updated.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
-	@discord.ui.button(label="Decide sides", style=discord.ButtonStyle.primary, custom_id="fixture:sides")
-	async def decide_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
+	@discord.ui.button(label="Accept map+mid", style=discord.ButtonStyle.success, custom_id="fixture:map_accept")
+	async def accept_map(self, interaction: discord.Interaction, button: discord.ui.Button):
 		res = await self._require_member(interaction)
 		if not res:
 			return
@@ -978,24 +1032,82 @@ class FixtureThreadView(discord.ui.View):
 		if s.scheduled_event_id:
 			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
 			return
-		if not (s.current_map and s.current_midpoint):
-			await interaction.response.send_message("Roll map/midpoint first.", ephemeral=True)
+		if s.current_map and s.current_midpoint:
+			await interaction.response.send_message("Map/midpoint is already locked.", ephemeral=True)
 			return
-		if s.sides_allies or s.sides_axis:
-			await interaction.response.send_message("Sides are already decided.", ephemeral=True)
+		if not (s.proposed_map and s.proposed_midpoint and s.proposed_map_by):
+			await interaction.response.send_message("No map/midpoint proposal to accept.", ephemeral=True)
 			return
-		if s.last_map_roll_by and clan == s.last_map_roll_by:
-			await interaction.response.send_message("The other clan must decide sides.", ephemeral=True)
+		if clan == s.proposed_map_by:
+			await interaction.response.send_message("The other clan must accept.", ephemeral=True)
 			return
-		if random.choice([True, False]):
-			s.sides_allies, s.sides_axis = s.clan_a, s.clan_b
-		else:
-			s.sides_allies, s.sides_axis = s.clan_b, s.clan_a
-		s.sides_decided_by = clan
+		s.current_map = s.proposed_map
+		s.current_midpoint = s.proposed_midpoint
+		s.map_history.append({"by": clan, "action": "accepted", "map": s.current_map, "mid": s.current_midpoint})
+		s.proposed_map = None
+		s.proposed_midpoint = None
+		s.proposed_map_by = None
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await interaction.response.send_message("Sides decided.", ephemeral=True)
+		await interaction.response.send_message("Map/midpoint locked.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+
+	@discord.ui.button(label="Propose sides (coin flip)", style=discord.ButtonStyle.primary, custom_id="fixture:sides_propose")
+	async def propose_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
+		res = await self._require_member(interaction)
+		if not res:
+			return
+		s, clan = res
+		if s.scheduled_event_id:
+			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
+			return
+		if s.sides_allies or s.sides_axis:
+			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
+			return
+		if random.choice([True, False]):
+			allies, axis = s.clan_a, s.clan_b
+		else:
+			allies, axis = s.clan_b, s.clan_a
+		s.proposed_sides_allies = allies
+		s.proposed_sides_axis = axis
+		s.proposed_sides_by = clan
+		s.sides_history.append({"by": clan, "action": "proposed", "allies": allies, "axis": axis})
+		st = _load_state()
+		st["threads"][s.key] = _state_to_dict(s)
+		_save_state(st)
+		await interaction.response.send_message("Sides proposal updated.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+
+	@discord.ui.button(label="Accept sides", style=discord.ButtonStyle.success, custom_id="fixture:sides_accept")
+	async def accept_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
+		res = await self._require_member(interaction)
+		if not res:
+			return
+		s, clan = res
+		if s.scheduled_event_id:
+			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
+			return
+		if s.sides_allies or s.sides_axis:
+			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
+			return
+		if not (s.proposed_sides_allies and s.proposed_sides_axis and s.proposed_sides_by):
+			await interaction.response.send_message("No sides proposal to accept.", ephemeral=True)
+			return
+		if clan == s.proposed_sides_by:
+			await interaction.response.send_message("The other clan must accept.", ephemeral=True)
+			return
+		s.sides_allies = s.proposed_sides_allies
+		s.sides_axis = s.proposed_sides_axis
+		s.sides_decided_by = clan
+		s.sides_history.append({"by": clan, "action": "accepted", "allies": s.sides_allies, "axis": s.sides_axis})
+		s.proposed_sides_allies = None
+		s.proposed_sides_axis = None
+		s.proposed_sides_by = None
+		st = _load_state()
+		st["threads"][s.key] = _state_to_dict(s)
+		_save_state(st)
+		await interaction.response.send_message("Sides locked.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Create Discord Event", style=discord.ButtonStyle.success, custom_id="fixture:event")
@@ -1058,6 +1170,7 @@ class FixtureThreadView(discord.ui.View):
 					name=_fixture_title(s),
 					start_time=start_dt,
 					end_time=end_dt,
+					privacy_level=discord.PrivacyLevel.guild_only,
 					entity_type=(
 						discord.EntityType.stage_instance
 						if isinstance(channel, discord.StageChannel)
@@ -1071,6 +1184,7 @@ class FixtureThreadView(discord.ui.View):
 					name=_fixture_title(s),
 					start_time=start_dt,
 					end_time=end_dt,
+					privacy_level=discord.PrivacyLevel.guild_only,
 					entity_type=discord.EntityType.external,
 					location="Hell Let Loose",
 					description=desc,
