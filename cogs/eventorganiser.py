@@ -248,11 +248,13 @@ class FixtureState:
 	proposed_sides_allies: Optional[str] = None
 	proposed_sides_axis: Optional[str] = None
 	proposed_sides_by: Optional[str] = None
+	proposed_server_host: Optional[str] = None
 	sides_history: list[dict[str, Any]] = field(default_factory=list)
 
 	sides_allies: Optional[str] = None
 	sides_axis: Optional[str] = None
 	sides_decided_by: Optional[str] = None
+	server_host: Optional[str] = None
 
 	scheduled_event_id: Optional[int] = None
 
@@ -292,10 +294,12 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"proposed_sides_allies": s.proposed_sides_allies,
 		"proposed_sides_axis": s.proposed_sides_axis,
 		"proposed_sides_by": s.proposed_sides_by,
+		"proposed_server_host": s.proposed_server_host,
 		"sides_history": s.sides_history,
 		"sides_allies": s.sides_allies,
 		"sides_axis": s.sides_axis,
 		"sides_decided_by": s.sides_decided_by,
+		"server_host": s.server_host,
 		"scheduled_event_id": s.scheduled_event_id,
 		"agreement_snapshot_message_id": s.agreement_snapshot_message_id,
 		"agreement_snapshot_text": s.agreement_snapshot_text,
@@ -329,10 +333,12 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		proposed_sides_allies=d.get("proposed_sides_allies"),
 		proposed_sides_axis=d.get("proposed_sides_axis"),
 		proposed_sides_by=d.get("proposed_sides_by"),
+		proposed_server_host=d.get("proposed_server_host"),
 		sides_history=d.get("sides_history") or [],
 		sides_allies=d.get("sides_allies"),
 		sides_axis=d.get("sides_axis"),
 		sides_decided_by=d.get("sides_decided_by"),
+		server_host=d.get("server_host"),
 		scheduled_event_id=d.get("scheduled_event_id"),
 		agreement_snapshot_message_id=d.get("agreement_snapshot_message_id"),
 		agreement_snapshot_text=d.get("agreement_snapshot_text"),
@@ -363,6 +369,8 @@ def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None
 	if s.sides_allies and s.sides_axis:
 		parts.append(f"Allies: {s.sides_allies}")
 		parts.append(f"Axis: {s.sides_axis}")
+	if s.server_host:
+		parts.append(f"Server host: {s.server_host} Server")
 	parts.append(f"Rerolls used: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}")
 	parts.append(f"Thread: <#{s.thread_id}>")
 	if event_url:
@@ -434,7 +442,9 @@ def _history_lines(items: list[dict[str, Any]], *, kind: str, limit: int = 6) ->
 		elif kind == "sides":
 			allies = entry.get("allies")
 			axis = entry.get("axis")
-			lines.append(f"- {by} {action}: Allies {allies} / Axis {axis}")
+			host = entry.get("host")
+			host_s = f" / Host {host} Server" if host else ""
+			lines.append(f"- {by} {action}: Allies {allies} / Axis {axis}{host_s}")
 		else:
 			lines.append(f"- {by} {action}")
 	return "\n".join(lines)
@@ -1002,10 +1012,12 @@ class FixtureThreadView(discord.ui.View):
 			allies, axis = s.clan_a, s.clan_b
 		else:
 			allies, axis = s.clan_b, s.clan_a
+		host = random.choice([s.clan_a, s.clan_b])
 		s.proposed_sides_allies = allies
 		s.proposed_sides_axis = axis
 		s.proposed_sides_by = clan
-		s.sides_history.append({"by": clan, "action": "proposed", "allies": allies, "axis": axis})
+		s.proposed_server_host = host
+		s.sides_history.append({"by": clan, "action": "proposed", "allies": allies, "axis": axis, "host": host})
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
@@ -1024,7 +1036,7 @@ class FixtureThreadView(discord.ui.View):
 		if s.sides_allies or s.sides_axis:
 			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
 			return
-		if not (s.proposed_sides_allies and s.proposed_sides_axis and s.proposed_sides_by):
+		if not (s.proposed_sides_allies and s.proposed_sides_axis and s.proposed_sides_by and s.proposed_server_host):
 			await interaction.response.send_message("No sides proposal to accept.", ephemeral=True)
 			return
 		if clan == s.proposed_sides_by:
@@ -1033,10 +1045,12 @@ class FixtureThreadView(discord.ui.View):
 		s.sides_allies = s.proposed_sides_allies
 		s.sides_axis = s.proposed_sides_axis
 		s.sides_decided_by = clan
-		s.sides_history.append({"by": clan, "action": "accepted", "allies": s.sides_allies, "axis": s.sides_axis})
+		s.server_host = s.proposed_server_host
+		s.sides_history.append({"by": clan, "action": "accepted", "allies": s.sides_allies, "axis": s.sides_axis, "host": s.server_host})
 		s.proposed_sides_allies = None
 		s.proposed_sides_axis = None
 		s.proposed_sides_by = None
+		s.proposed_server_host = None
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
@@ -1067,6 +1081,9 @@ class FixtureThreadView(discord.ui.View):
 		if not (s.sides_allies and s.sides_axis):
 			await interaction.followup.send("Decide sides first.", ephemeral=True)
 			return
+		if not s.server_host:
+			await interaction.followup.send("Select sides first (server host is chosen with the coin flip).", ephemeral=True)
+			return
 		if interaction.guild is None:
 			await interaction.followup.send("Server only.", ephemeral=True)
 			return
@@ -1083,7 +1100,6 @@ class FixtureThreadView(discord.ui.View):
 		end_dt = start_dt + timedelta(hours=2)
 
 		desc = (
-			f"**Fixture:** {s.clan_a} vs {s.clan_b}\n"
 			f"**Round:** {s.round_no} ({_format_round_window(s.round_no)})\n"
 			f"**Team size:** {s.agreed_team_size} vs {s.agreed_team_size}\n"
 			f"**Map:** {s.current_map}\n"
@@ -1099,7 +1115,8 @@ class FixtureThreadView(discord.ui.View):
 				if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
 					await interaction.followup.send("Configured event channel is invalid.", ephemeral=True)
 					return
-					ev = await guild.create_scheduled_event(
+				# Voice/stage events don't have a location field, so include host in the description.
+				ev = await guild.create_scheduled_event(
 					name=_fixture_title(s),
 					start_time=start_dt,
 					end_time=end_dt,
@@ -1110,7 +1127,7 @@ class FixtureThreadView(discord.ui.View):
 						else discord.EntityType.voice
 					),
 					channel=channel,
-					description=desc,
+					description=f"{desc}\n**Server host:** {s.server_host} Server",
 				)
 			else:
 				ev = await guild.create_scheduled_event(
@@ -1119,7 +1136,7 @@ class FixtureThreadView(discord.ui.View):
 					end_time=end_dt,
 					privacy_level=discord.PrivacyLevel.guild_only,
 					entity_type=discord.EntityType.external,
-					location="Hell Let Loose",
+					location=f"{s.server_host} Server",
 					description=desc,
 				)
 		except discord.Forbidden:
