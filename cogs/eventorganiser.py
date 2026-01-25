@@ -929,6 +929,7 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, clan = res
+		is_first_roll = s.current_map is None
 		if not MAP_POOL:
 			await interaction.response.send_message("MAP_POOL is empty.", ephemeral=True)
 			return
@@ -947,14 +948,14 @@ class FixtureThreadView(discord.ui.View):
 			await interaction.response.send_message("Sides are already decided; map rerolls are locked.", ephemeral=True)
 			return
 		# First roll is only allowed by the requester clan (Clan A) so they don't lose a reroll.
-		if not s.current_map and clan != s.clan_a:
+		if is_first_roll and clan != s.clan_a:
 			await interaction.response.send_message(
 				f"Only {s.clan_a} can do the initial roll.",
 				ephemeral=True,
 			)
 			return
 		# After a roll exists, each clan can reroll up to the limit, and cannot reroll twice in a row.
-		if s.current_map and _reroll_count_for(s, clan) >= REROLL_LIMIT:
+		if not is_first_roll and _reroll_count_for(s, clan) >= REROLL_LIMIT:
 			await interaction.response.send_message("You have used all rerolls.", ephemeral=True)
 			return
 		if s.last_map_roll_by and s.last_map_roll_by == clan:
@@ -972,10 +973,8 @@ class FixtureThreadView(discord.ui.View):
 		s.current_midpoint = new_mid
 		s.map_proposed_by = clan
 		s.last_map_roll_by = clan
-		if s.current_map:
-			# If this wasn't the first roll, consume a reroll.
-			if raw.get("current_map") is not None:
-				_inc_reroll(s, clan)
+		if not is_first_roll:
+			_inc_reroll(s, clan)
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
