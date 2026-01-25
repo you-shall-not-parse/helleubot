@@ -266,20 +266,24 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"clan_a": s.clan_a,
 		"clan_b": s.clan_b,
 		"round_no": s.round_no,
+		"control_message_id": s.control_message_id,
 		"proposed_datetime_utc": s.proposed_datetime_utc,
 		"proposed_datetime_by": s.proposed_datetime_by,
+		"datetime_history": s.datetime_history,
 		"agreed_datetime_utc": s.agreed_datetime_utc,
 		"proposed_team_size": s.proposed_team_size,
 		"proposed_team_size_by": s.proposed_team_size_by,
+		"team_size_history": s.team_size_history,
 		"agreed_team_size": s.agreed_team_size,
 		"current_map": s.current_map,
 		"current_midpoint": s.current_midpoint,
 		"map_proposed_by": s.map_proposed_by,
-		"pending_veto_by": s.pending_veto_by,
-		"veto_count_a": s.veto_count_a,
-		"veto_count_b": s.veto_count_b,
+		"reroll_count_a": s.reroll_count_a,
+		"reroll_count_b": s.reroll_count_b,
+		"last_map_roll_by": s.last_map_roll_by,
 		"sides_allies": s.sides_allies,
 		"sides_axis": s.sides_axis,
+		"sides_decided_by": s.sides_decided_by,
 		"scheduled_event_id": s.scheduled_event_id,
 		"agreement_snapshot_message_id": s.agreement_snapshot_message_id,
 		"agreement_snapshot_text": s.agreement_snapshot_text,
@@ -292,20 +296,24 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		clan_a=str(d["clan_a"]),
 		clan_b=str(d["clan_b"]),
 		round_no=int(d["round_no"]),
+		control_message_id=d.get("control_message_id"),
 		proposed_datetime_utc=d.get("proposed_datetime_utc"),
 		proposed_datetime_by=d.get("proposed_datetime_by"),
+		datetime_history=d.get("datetime_history") or [],
 		agreed_datetime_utc=d.get("agreed_datetime_utc"),
 		proposed_team_size=d.get("proposed_team_size"),
 		proposed_team_size_by=d.get("proposed_team_size_by"),
+		team_size_history=d.get("team_size_history") or [],
 		agreed_team_size=d.get("agreed_team_size"),
 		current_map=d.get("current_map"),
 		current_midpoint=d.get("current_midpoint"),
 		map_proposed_by=d.get("map_proposed_by"),
-		pending_veto_by=d.get("pending_veto_by"),
-		veto_count_a=int(d.get("veto_count_a", 0)),
-		veto_count_b=int(d.get("veto_count_b", 0)),
+		reroll_count_a=int(d.get("reroll_count_a", 0)),
+		reroll_count_b=int(d.get("reroll_count_b", 0)),
+		last_map_roll_by=d.get("last_map_roll_by"),
 		sides_allies=d.get("sides_allies"),
 		sides_axis=d.get("sides_axis"),
+		sides_decided_by=d.get("sides_decided_by"),
 		scheduled_event_id=d.get("scheduled_event_id"),
 		agreement_snapshot_message_id=d.get("agreement_snapshot_message_id"),
 		agreement_snapshot_text=d.get("agreement_snapshot_text"),
@@ -336,7 +344,7 @@ def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None
 	if s.sides_allies and s.sides_axis:
 		parts.append(f"Allies: {s.sides_allies}")
 		parts.append(f"Axis: {s.sides_axis}")
-	parts.append(f"Vetoes: {s.clan_a} {s.veto_count_a}/{VETO_LIMIT} • {s.clan_b} {s.veto_count_b}/{VETO_LIMIT}")
+	parts.append(f"Rerolls used: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}")
 	parts.append(f"Thread: <#{s.thread_id}>")
 	if event_url:
 		parts.append(f"Event: {event_url}")
@@ -363,15 +371,46 @@ def _clan_role(guild: discord.Guild, clan: str) -> Optional[discord.Role]:
 	return guild.get_role(rid)
 
 
-def _veto_count_for(s: FixtureState, clan: str) -> int:
-	return s.veto_count_a if clan == s.clan_a else s.veto_count_b
+def _reroll_count_for(s: FixtureState, clan: str) -> int:
+	return s.reroll_count_a if clan == s.clan_a else s.reroll_count_b
 
 
-def _inc_veto(s: FixtureState, clan: str) -> None:
+def _inc_reroll(s: FixtureState, clan: str) -> None:
 	if clan == s.clan_a:
-		s.veto_count_a += 1
+		s.reroll_count_a += 1
 	else:
-		s.veto_count_b += 1
+		s.reroll_count_b += 1
+
+
+def _format_dt_short(dt_iso: str) -> str:
+	try:
+		dt = datetime.fromisoformat(dt_iso)
+		if dt.tzinfo is None:
+			dt = dt.replace(tzinfo=timezone.utc)
+		dt = dt.astimezone(timezone.utc)
+		return dt.strftime("%d-%m-%Y %H:%M") + " UTC"
+	except Exception:
+		return dt_iso
+
+
+def _history_lines(items: list[dict[str, Any]], *, kind: str, limit: int = 6) -> str:
+	"""Render last N history items as a code block-friendly list."""
+	if not items:
+		return "(no history yet)"
+	lines: list[str] = []
+	for entry in items[-limit:]:
+		by = str(entry.get("by", "?"))
+		action = str(entry.get("action", "proposed"))
+		if kind == "dt":
+			val = entry.get("dt")
+			val_s = _format_dt_short(str(val)) if val else "?"
+			lines.append(f"- {by} {action}: {val_s}")
+		elif kind == "size":
+			val = entry.get("size")
+			lines.append(f"- {by} {action}: {val}v{val}")
+		else:
+			lines.append(f"- {by} {action}")
+	return "\n".join(lines)
 
 
 def _fixture_title(s: FixtureState) -> str:
