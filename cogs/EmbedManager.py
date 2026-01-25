@@ -324,7 +324,7 @@ class EmbedManager(commands.Cog):
         )
 
         embed4.add_field(
-            name="👥*Teams Participating",
+            name="👥Teams Participating",
             value=(
                 "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, OFIN\n"
             ),
