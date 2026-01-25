@@ -727,9 +727,7 @@ class ScoreboardCog(commands.Cog):
 					return font
 			return _truetype(min_size)
 
-		# Outline for readability without drawing any background boxes
-		stroke_w = _clamp(int(h * 0.0035), 1, 4)
-		stroke_fill = (0, 0, 0, 255)
+		# No outline; write plain text onto the template
 		text_fill = (255, 255, 255, 255)
 
 		margin = int(w * 0.06)
@@ -753,7 +751,7 @@ class ScoreboardCog(commands.Cog):
 		text_h = bbox[3] - bbox[1]
 		x = (w - text_w) // 2
 		y = result_top + ((result_bottom - result_top - text_h) // 2)
-		draw.text((x, y), result_text, font=result_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+		draw.text((x, y), result_text, font=result_font, fill=text_fill)
 
 		# Leaderboard table (auto-fit all teams)
 		rows = _sorted_leaderboard_rows(self.store.data.get("clan_stats", {}))
@@ -763,21 +761,26 @@ class ScoreboardCog(commands.Cog):
 		# +1 for header row
 		row_h = max(16, int((usable_bottom - usable_top) / (row_count + 1)))
 
-		header_font = _truetype(_clamp(int(row_h * 0.75), 12, 44))
-		row_font = _truetype(_clamp(int(row_h * 0.75), 12, 42))
+		header_font = _truetype(_clamp(int(row_h * 0.78), 12, 44))
+		row_font = _truetype(_clamp(int(row_h * 0.78), 12, 42))
 
 		col_idx = margin + int(w * 0.02)
 		col_name = margin + int(w * 0.12)
-		col_score = w - margin - int(w * 0.30)
-		col_w = w - margin - int(w * 0.16)
-		col_l = w - margin - int(w * 0.08)
+		# Evenly space numeric columns in a fixed right-side band
+		numeric_right = w - margin - int(w * 0.04)
+		numeric_left = w - margin - int(w * 0.40)
+		segment = max(1, (numeric_right - numeric_left) / 3)
+		col_score = int(numeric_left + segment * 0.5)
+		col_w = int(numeric_left + segment * 1.5)
+		col_l = int(numeric_left + segment * 2.5)
 
 		header_y = usable_top
-		draw.text((col_idx, header_y), "#", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
-		draw.text((col_name, header_y), "CLAN", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
-		draw.text((col_score, header_y), "SCORE", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
-		draw.text((col_w, header_y), "W", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
-		draw.text((col_l, header_y), "L", font=header_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+		# Use anchors so columns align consistently
+		draw.text((col_idx, header_y), "#", font=header_font, fill=text_fill, anchor="la")
+		draw.text((col_name, header_y), "CLAN", font=header_font, fill=text_fill, anchor="la")
+		draw.text((col_score, header_y), "SCORE", font=header_font, fill=text_fill, anchor="ma")
+		draw.text((col_w, header_y), "W", font=header_font, fill=text_fill, anchor="ma")
+		draw.text((col_l, header_y), "L", font=header_font, fill=text_fill, anchor="ma")
 
 		for i, r in enumerate(rows, start=1):
 			y = header_y + row_h * i
@@ -787,11 +790,11 @@ class ScoreboardCog(commands.Cog):
 			# keep names from spilling
 			if len(name) > 12:
 				name = name[:11] + "…"
-			draw.text((col_idx, y), str(i), font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
-			draw.text((col_name, y), name, font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
-			draw.text((col_score, y), str(int(r["score"])), font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
-			draw.text((col_w, y), str(int(r["w"])), font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
-			draw.text((col_l, y), str(int(r["l"])), font=row_font, fill=text_fill, stroke_width=stroke_w, stroke_fill=stroke_fill)
+			draw.text((col_idx, y), str(i), font=row_font, fill=text_fill, anchor="la")
+			draw.text((col_name, y), name, font=row_font, fill=text_fill, anchor="la")
+			draw.text((col_score, y), str(int(r["score"])), font=row_font, fill=text_fill, anchor="ma")
+			draw.text((col_w, y), str(int(r["w"])), font=row_font, fill=text_fill, anchor="ma")
+			draw.text((col_l, y), str(int(r["l"])), font=row_font, fill=text_fill, anchor="ma")
 
 		out_path = data_path("scoreboard_rendered.png")
 		base.save(out_path, format="PNG")
