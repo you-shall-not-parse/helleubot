@@ -18,6 +18,9 @@ from data_paths import data_path
 # Config (fill these in)
 # -----------------------------
 
+# Guild scope for slash commands (set this to your server ID)
+GUILD_ID: int = 1462382487622914079
+
 # Role allowed to use admin scoreboard edit commands
 ADMIN_ROLE_ID: int = 1109147750932676649
 
@@ -607,6 +610,7 @@ class ScoreboardCog(commands.Cog):
 	def __init__(self, bot: commands.Bot):
 		self.bot = bot
 		self.store = ScoreboardStore()
+		self._did_guild_sync = False
 
 	async def cog_load(self) -> None:
 		await self.store.load()
@@ -625,6 +629,16 @@ class ScoreboardCog(commands.Cog):
 
 	@commands.Cog.listener()
 	async def on_ready(self):
+		# Guild-scoped slash command sync (instant availability in this guild).
+		if not self._did_guild_sync and GUILD_ID:
+			try:
+				await self.bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+				self._did_guild_sync = True
+			except Exception:
+				log.exception("Failed syncing scoreboard commands to guild %s", GUILD_ID)
+				# Don't flip the flag; we'll retry next on_ready.
+				return
+
 		# Post/repair the main scoreboard message and leaderboard message.
 		await self.ensure_scoreboard_message()
 		await self.ensure_leaderboard_message()
@@ -739,19 +753,29 @@ class ScoreboardCog(commands.Cog):
 
 		# Latest result text (centered)
 		last = self.store.data.get("last_result")
+		center_y = result_top + ((result_bottom - result_top) // 2)
 		if isinstance(last, dict):
-			result_text = f"{last.get('a_name','')} {last.get('a_score',0)} - {last.get('b_score',0)} {last.get('b_name','')}".strip()
+			a_name = str(last.get("a_name", "") or "")
+			b_name = str(last.get("b_name", "") or "")
+			a_score = int(last.get("a_score", 0))
+			b_score = int(last.get("b_score", 0))
+			score_text = f"{a_score} - {b_score}"
+
+			# Score centered, clans anchored left/right so they don't crowd the numbers.
+			max_score_w = int((w - 2 * margin) * 0.45)
+			score_font = _fit_font(score_text, max_score_w, start_size=_clamp(int(h * 0.075), 30, 120), min_size=20)
+			clan_font = _fit_font(a_name if len(a_name) >= len(b_name) else b_name, int((w - 2 * margin) * 0.35), start_size=_clamp(int(h * 0.070), 28, 110), min_size=18)
+
+			left_x = margin + int(w * 0.08)
+			right_x = w - margin - int(w * 0.08)
+			draw.text((left_x, center_y), a_name, font=clan_font, fill=text_fill, anchor="lm")
+			draw.text((w // 2, center_y), score_text, font=score_font, fill=text_fill, anchor="mm")
+			draw.text((right_x, center_y), b_name, font=clan_font, fill=text_fill, anchor="rm")
 		else:
 			result_text = "NO RESULTS YET"
-
-		max_result_w = (w - 2 * margin) - 40
-		result_font = _fit_font(result_text, max_result_w, start_size=_clamp(int(h * 0.070), 30, 110), min_size=20)
-		bbox = draw.textbbox((0, 0), result_text, font=result_font)
-		text_w = bbox[2] - bbox[0]
-		text_h = bbox[3] - bbox[1]
-		x = (w - text_w) // 2
-		y = result_top + ((result_bottom - result_top - text_h) // 2)
-		draw.text((x, y), result_text, font=result_font, fill=text_fill)
+			max_result_w = (w - 2 * margin) - 40
+			result_font = _fit_font(result_text, max_result_w, start_size=_clamp(int(h * 0.075), 30, 120), min_size=20)
+			draw.text((w // 2, center_y), result_text, font=result_font, fill=text_fill, anchor="mm")
 
 		# Leaderboard table (auto-fit all teams)
 		rows = _sorted_leaderboard_rows(self.store.data.get("clan_stats", {}))
@@ -767,8 +791,9 @@ class ScoreboardCog(commands.Cog):
 		col_idx = margin + int(w * 0.02)
 		col_name = margin + int(w * 0.12)
 		# Evenly space numeric columns in a fixed right-side band
-		numeric_right = w - margin - int(w * 0.04)
-		numeric_left = w - margin - int(w * 0.40)
+		# Shift the numeric band left a touch so Score doesn't crowd W.
+		numeric_right = w - margin - int(w * 0.07)
+		numeric_left = w - margin - int(w * 0.46)
 		segment = max(1, (numeric_right - numeric_left) / 3)
 		col_score = int(numeric_left + segment * 0.5)
 		col_w = int(numeric_left + segment * 1.5)
@@ -922,6 +947,7 @@ class ScoreboardCog(commands.Cog):
 		return _is_admin_member(interaction.user)
 
 
+	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.command(name="scoreboard_admin_edit_clan", description="Admin: edit a clan's leaderboard values")
 	@app_commands.check(_admin_app_command_check)
 	async def scoreboard_admin_edit_clan(
@@ -957,6 +983,7 @@ class ScoreboardCog(commands.Cog):
 		await interaction.followup.send(f"Updated {clan_role.name}: score={score}, W={wins}, L={losses}", ephemeral=True)
 
 
+	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.command(name="scoreboard_admin_edit_match", description="Admin: edit a confirmed match and adjust leaderboard")
 	@app_commands.check(_admin_app_command_check)
 	async def scoreboard_admin_edit_match(
@@ -1039,6 +1066,7 @@ class ScoreboardCog(commands.Cog):
 		await self.ensure_leaderboard_message()
 		await interaction.followup.send(f"Updated match {match_id} to {new_a}-{new_b} and adjusted leaderboard.", ephemeral=True)
 
+	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.command(name="scoreboard_admin_set_latest", description="Admin: set the displayed latest result line")
 	@app_commands.check(_admin_app_command_check)
 	async def scoreboard_admin_set_latest(
@@ -1074,6 +1102,7 @@ class ScoreboardCog(commands.Cog):
 		await self.ensure_leaderboard_message()
 		await interaction.followup.send(f"Set latest result to {_role_name_from_id(clan_a.id)} {a}-{b} {_role_name_from_id(clan_b.id)}.", ephemeral=True)
 
+	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.command(name="scoreboard_repost", description="Repost/repair the scoreboard and leaderboard messages")
 	@app_commands.checks.has_permissions(administrator=True)
 	async def scoreboard_repost(self, interaction: discord.Interaction):
