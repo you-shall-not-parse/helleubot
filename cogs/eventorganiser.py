@@ -1374,7 +1374,7 @@ class EventOrganiser(commands.Cog):
 		if ENABLE_MAP_MIDPOINT:
 			steps.append("- Roll map & midpoint (first roll is free, then each clan can reroll up to 3 times)")
 		if ENABLE_SIDES:
-			steps.append("- Decide sides with a random chance")
+			steps.append("- Decide sides and hose server with a random chance!")
 		steps.append("- Create the Discord event when done!")
 
 		embed = discord.Embed(
