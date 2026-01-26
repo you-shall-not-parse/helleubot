@@ -155,9 +155,9 @@ class EmbedManager(commands.Cog):
             name=":question: How does the league work?",
             value=(
                 "- Single division, everyone plays each team once\n"
-                "- Match scheduling is handled directly between clan representatives\n"
-                "- Fixtures, results, media and standings are provided **remotely** into your clan discord\n"
-                "- Scores submitted via button-based embed message, opposing clan confirms the result and result is reposed in <#1462384116376014911>\n"
+                "- Match scheduling is handled directly between clan representatives using <#1464726144367464685>\n"
+                "- Fixtures, results, media and standings are provided **remotely** into your clan discord via <#1462384116376014911> \n"
+                "- Scores submitted via button-based embed message, opposing clan confirms the result and result is reposed in <#1462387812815998997>\n"
                 "- Check out <#1464642927438463269> for full rules"
             ),
             inline=False,
@@ -166,16 +166,8 @@ class EmbedManager(commands.Cog):
             name=" :pencil: How and when do we join?",
             value=(
                 "- European teams :flag_eu: only are permitted to take part\n"
-                "- Check out the current season schedule and fixtures in <#1462384116376014911>\n"
+                "- Check out the current season schedule and fixtures in <#1462388344205082685>\n"
                 "- Contact an admin in <#1462388616025210952> to express interest\n"
-            ),
-            inline=False,
-        )
-        
-        embed1.add_field(
-            name="Links",
-            value=(
-                "League support/contact: <#1462388616025210952>"
             ),
             inline=False,
         )
@@ -211,7 +203,7 @@ class EmbedManager(commands.Cog):
             name="🗺️ Maps, Sides & Servers",
             value=(
                 "- One map per round — all teams play the same map then the map leaves the pool\n"
-                "- Maps are chosen randomly from the pool and all maps except Stalingrad, Driel, Remagen, Smolensk are included\n"
+                "- Maps are chosen by the league admins (method TBC) and all maps except Stalingrad, Driel, Remagen, Smolensk are in the mix! Be prepared for a wheely big surprise...\n"
                 "- Mid-point: Spin the Wheel\n"
                 "- Sides and Server host decided by coin flip\n"
                 "- Streaming is permitted but must not be live and must be agreed before the match with opponent"
@@ -256,7 +248,7 @@ class EmbedManager(commands.Cog):
                 "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
                 "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ permitted to move it\n"
                 "- Commander artillery is prohibited\n" 
-                "- Panther tank is prohibited unless otherwise explicitly agreed by both teams, driving (only) within the HQ permitted to move it"
+                "- Panther tank is prohibited unless otherwise explicitly agreed by both teams, driving (only) within the HQ permitted to move it\n"
                 "- Failure to comply may result in forfeiture of the match and/or points deducted\n"
             ),
             inline=False,
