@@ -721,56 +721,75 @@ class ScoreboardCog(commands.Cog):
 			await self.store.save()
 
 	async def ensure_leaderboard_message(self) -> None:
-		async with self._leaderboard_lock:
-			now = asyncio.get_running_loop().time()
-			# Debounce very fast back-to-back calls (startup/reconnect).
-			if self._last_leaderboard_update_ts and (now - self._last_leaderboard_update_ts) < 2.0:
-				return
+		# Improved: Debounce and queue leaderboard updates to avoid rate limits.
+		if hasattr(self, '_leaderboard_update_task') and self._leaderboard_update_task and not self._leaderboard_update_task.done():
+			# If an update is already scheduled, just flag that another update is needed.
+			self._leaderboard_update_pending = True
+			return
 
-			if LEADERBOARD_CHANNEL_ID == 0:
-				return
-			channel = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
-			if channel is None:
+		self._leaderboard_update_pending = False
+		self._leaderboard_update_task = asyncio.create_task(self._run_leaderboard_update())
+
+	async def _run_leaderboard_update(self):
+		while True:
+			async with self._leaderboard_lock:
+				now = asyncio.get_running_loop().time()
+				# Enforce cooldown between updates
+				if self._last_leaderboard_update_ts and (now - self._last_leaderboard_update_ts) < 60.0:
+					sleep_time = 60.0 - (now - self._last_leaderboard_update_ts)
+					await asyncio.sleep(sleep_time)
+				self._last_leaderboard_update_ts = asyncio.get_running_loop().time()
+
+				if LEADERBOARD_CHANNEL_ID == 0:
+					return
+				channel = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
+				if channel is None:
+					try:
+						channel = await self.bot.fetch_channel(LEADERBOARD_CHANNEL_ID)
+					except Exception:
+						log.exception("Failed to fetch leaderboard channel")
+						return
+				if not isinstance(channel, discord.TextChannel):
+					return
+
+				message_id = self.store.data.get("leaderboard_message_id")
+				image_path = await self._render_scoreboard_image()
+				filename = os.path.basename(image_path)
+				file = discord.File(image_path, filename=filename)
+				embed = discord.Embed(
+					title="League Scoreboard",
+					colour=discord.Colour.blurple(),
+					timestamp=datetime.now(timezone.utc),
+				)
+				embed.set_image(url=f"attachment://{filename}")
+				content = ""
+
 				try:
-					channel = await self.bot.fetch_channel(LEADERBOARD_CHANNEL_ID)
+					if message_id:
+						msg = await channel.fetch_message(int(message_id))
+						await msg.edit(content=content, embed=embed, attachments=[file])
+					else:
+						msg = await channel.send(content=content, embed=embed, file=file)
+						self.store.data["leaderboard_message_id"] = msg.id
+						await self.store.save()
+				except discord.HTTPException as e:
+					if e.status == 429:
+						retry_after = getattr(e, 'retry_after', 60)
+						log.warning(f"Rate limited by Discord, retrying leaderboard update in {retry_after} seconds.")
+						await asyncio.sleep(retry_after)
+						continue
+					else:
+						log.exception("HTTPException during leaderboard update")
+						return
 				except Exception:
-					log.exception("Failed to fetch leaderboard channel")
-					return
-			if not isinstance(channel, discord.TextChannel):
-				return
-
-			message_id = self.store.data.get("leaderboard_message_id")
-			image_path = await self._render_scoreboard_image()
-			filename = os.path.basename(image_path)
-			file = discord.File(image_path, filename=filename)
-			embed = discord.Embed(
-				title="League Scoreboard",
-				colour=discord.Colour.blurple(),
-				timestamp=datetime.now(timezone.utc),
-			)
-			embed.set_image(url=f"attachment://{filename}")
-			content = ""
-
-			if message_id:
-				try:
-					msg = await channel.fetch_message(int(message_id))
-					# Replace the attachment with the newly rendered image.
-					await msg.edit(content=content, embed=embed, attachments=[file])
-					self._last_leaderboard_update_ts = now
-					return
-				except discord.NotFound:
-					# Message was deleted; clear the stored ID and re-send.
-					self.store.data["leaderboard_message_id"] = None
-					await self.store.save()
-				except Exception:
-					# Don't spam new messages on transient failures.
-					log.exception("Could not edit existing leaderboard message")
+					log.exception("Could not update leaderboard message")
 					return
 
-			msg = await channel.send(content=content, embed=embed, file=file)
-			self.store.data["leaderboard_message_id"] = msg.id
-			await self.store.save()
-			self._last_leaderboard_update_ts = now
+			# If another update was requested during the cooldown, run again.
+			if getattr(self, '_leaderboard_update_pending', False):
+				self._leaderboard_update_pending = False
+				continue
+			break
 
 	async def _render_scoreboard_image(self) -> str:
 		"""Render the scoreboard onto the provided template image."""
