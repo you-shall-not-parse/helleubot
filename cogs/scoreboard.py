@@ -52,7 +52,7 @@ FONT_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_font.ttf")
 # Optional: attach a video alongside the main "Submit Scores" embed.
 # Note: Discord does not render local mp4s *inside* an embed; it shows them as an attached video preview.
 # Set to None to disable.
-SCOREBOARD_VIDEO_PATH: Optional[str] = os.path.join(os.path.dirname(__file__), "leaguesubmtresults (1).mp4")
+SCOREBOARD_VIDEO_PATH: Optional[str] = os.path.join(os.path.dirname(__file__), "leaguesubmtresults.mp4")
 
 
 log = logging.getLogger(__name__)
