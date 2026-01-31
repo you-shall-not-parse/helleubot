@@ -527,7 +527,6 @@ class ScoreboardCog(commands.Cog):
 				self._leaderboard_update_pending = False
 				continue
 			break
-				child.disabled = not (self.opponent_clan_role_id is not None and self.selected_score is not None)
 
 	@discord.ui.button(label="Submit Result", style=discord.ButtonStyle.success, disabled=True, custom_id="scoreboard:submit_result")
 	async def submit_result(self, interaction: discord.Interaction, button: discord.ui.Button):
