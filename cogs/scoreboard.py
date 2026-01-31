@@ -492,7 +492,7 @@ class ScoreboardCog(commands.Cog):
 					except Exception:
 						log.exception("Failed to fetch leaderboard channel")
 						return
-				if not isinstance(channel, discord.TextChannel):
+				if not isinstance(channel, (discord.TextChannel, discord.NewsChannel)):
 					return
 
 				message_id = self.store.data.get("leaderboard_message_id")
@@ -507,10 +507,17 @@ class ScoreboardCog(commands.Cog):
 				embed.set_image(url=f"attachment://{filename}")
 				content = ""
 
+
 				if message_id:
 					try:
 						msg = await channel.fetch_message(int(message_id))
 						await msg.edit(content=content, embed=embed, attachments=[file])
+						# Publish as announcement if this is a News Channel
+						if isinstance(channel, discord.NewsChannel):
+							try:
+								await msg.publish()
+							except Exception:
+								log.exception("Failed to publish leaderboard announcement")
 					except discord.NotFound:
 						self.store.data["leaderboard_message_id"] = None
 						await self.store.save()
@@ -521,6 +528,12 @@ class ScoreboardCog(commands.Cog):
 					msg = await channel.send(content=content, embed=embed, file=file)
 					self.store.data["leaderboard_message_id"] = msg.id
 					await self.store.save()
+					# Publish as announcement if this is a News Channel
+					if isinstance(channel, discord.NewsChannel):
+						try:
+							await msg.publish()
+						except Exception:
+							log.exception("Failed to publish leaderboard announcement")
 
 			# If another update was requested during the cooldown, run again.
 			if self._leaderboard_update_pending:
