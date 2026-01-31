@@ -30,8 +30,10 @@ SCOREBOARD_CHANNEL_ID: int = 1462387812815998997
 # Channel where results are posted for confirmation by the opposing clan
 VALIDATION_CHANNEL_ID: int = 1462382488784470181
 
-# Channel where the leaderboard + match images are posted
 LEADERBOARD_CHANNEL_ID: int = 1462384116376014911
+
+# Cooldown for leaderboard message updates (attachment edits are rate-limit heavy)
+LEADERBOARD_UPDATE_COOLDOWN_SECONDS: float = 60.0
 
 # Role IDs for each clan (name -> role_id)
 CLAN_ROLES: dict[str, int] = {
@@ -446,73 +448,85 @@ class OpponentSelect(discord.ui.Select):
 		await interaction.response.edit_message(view=view)
 
 
-class ScoreSelect(discord.ui.Select):
-	def __init__(self, submitter_clan_role_id: int):
-		self.submitter_clan_role_id = submitter_clan_role_id
-		super().__init__(
-			placeholder="Select the match score…",
-			min_values=1,
-			max_values=1,
-			options=[discord.SelectOption(label="Pick an opponent first", value="0-5")],
-			disabled=True,
-			custom_id="scoreboard:score_select",
-		)
 
-	def set_matchup(self, opponent_clan_role_id: Optional[int]) -> None:
-		# Preserve current selection if possible.
-		selected_value = None
-		if self.view is not None and hasattr(self.view, "selected_score"):
-			selected_value = getattr(self.view, "selected_score")
+class ScoreboardCog(commands.Cog):
+	"""Score submission + validation + leaderboard."""
 
-		if opponent_clan_role_id is None:
-			self.disabled = True
-			self.placeholder = "Select the match score…"
-			self.options = [discord.SelectOption(label="Pick an opponent first", value="0-5", default=True)]
+	def __init__(self, bot: commands.Bot):
+		self.bot = bot
+		self.store = ScoreboardStore()
+		self._did_guild_sync = False
+		self._did_initial_ensure = False
+		self._leaderboard_lock = asyncio.Lock()
+		self._scoreboard_lock = asyncio.Lock()
+		self._last_leaderboard_update_ts: float = 0.0
+		self._leaderboard_update_pending: bool = False
+		self._leaderboard_update_task: Optional[asyncio.Task] = None
+
+	# ...existing code...
+
+	async def ensure_leaderboard_message(self) -> None:
+		# Queue leaderboard updates so only one runs per cooldown window.
+		if self._leaderboard_update_task and not self._leaderboard_update_task.done():
+			self._leaderboard_update_pending = True
 			return
-		a_name = _role_name_from_id(self.submitter_clan_role_id)
-		b_name = _role_name_from_id(opponent_clan_role_id)
-		self.disabled = False
-		options: list[discord.SelectOption] = []
-		selected_label: Optional[str] = None
-		for a, b in _score_options():
-			value = f"{a}-{b}"
-			label = f"{a_name} - {b_name} ({a}-{b})"
-			is_default = selected_value == value
-			if is_default:
-				selected_label = label
-			options.append(discord.SelectOption(label=label, value=value, default=is_default))
-		self.options = options
-		self.placeholder = selected_label or "Select the match score…"
 
-	async def callback(self, interaction: discord.Interaction):
-		view: "SubmitFlowView" = self.view  # type: ignore[assignment]
-		view.selected_score = str(self.values[0])
-		# Make the selected score "stick" visually.
-		self.set_matchup(view.opponent_clan_role_id)
-		view._refresh_submit_button_state()
-		await interaction.response.edit_message(view=view)
+		self._leaderboard_update_pending = False
+		self._leaderboard_update_task = asyncio.create_task(self._run_leaderboard_update())
 
+	async def _run_leaderboard_update(self):
+		while True:
+			async with self._leaderboard_lock:
+				now = asyncio.get_running_loop().time()
+				if self._last_leaderboard_update_ts and (now - self._last_leaderboard_update_ts) < LEADERBOARD_UPDATE_COOLDOWN_SECONDS:
+					sleep_time = LEADERBOARD_UPDATE_COOLDOWN_SECONDS - (now - self._last_leaderboard_update_ts)
+					await asyncio.sleep(sleep_time)
+				self._last_leaderboard_update_ts = asyncio.get_running_loop().time()
 
-class SubmitFlowView(discord.ui.View):
-	def __init__(self, submitter_id: int, submitter_clan_role_id: int):
-		super().__init__(timeout=300)
-		self.submitter_id = submitter_id
-		self.submitter_clan_role_id = submitter_clan_role_id
-		self.opponent_clan_role_id: Optional[int] = None
-		self.selected_score: Optional[str] = None
+				if LEADERBOARD_CHANNEL_ID == 0:
+					return
+				channel = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
+				if channel is None:
+					try:
+						channel = await self.bot.fetch_channel(LEADERBOARD_CHANNEL_ID)
+					except Exception:
+						log.exception("Failed to fetch leaderboard channel")
+						return
+				if not isinstance(channel, discord.TextChannel):
+					return
 
-		self.add_item(OpponentSelect(submitter_clan_role_id))
-		self.score_select = ScoreSelect(submitter_clan_role_id)
-		self.add_item(self.score_select)
+				message_id = self.store.data.get("leaderboard_message_id")
+				image_path = await self._render_scoreboard_image()
+				filename = os.path.basename(image_path)
+				file = discord.File(image_path, filename=filename)
+				embed = discord.Embed(
+					title="League Scoreboard",
+					colour=discord.Colour.blurple(),
+					timestamp=datetime.now(timezone.utc),
+				)
+				embed.set_image(url=f"attachment://{filename}")
+				content = ""
 
-	def _refresh_score_options(self) -> None:
-		self.score_select.set_matchup(self.opponent_clan_role_id)
-		self.selected_score = None
-		self._refresh_submit_button_state()
+				if message_id:
+					try:
+						msg = await channel.fetch_message(int(message_id))
+						await msg.edit(content=content, embed=embed, attachments=[file])
+					except discord.NotFound:
+						self.store.data["leaderboard_message_id"] = None
+						await self.store.save()
+					except Exception:
+						log.exception("Could not edit existing leaderboard message")
+						return
+				else:
+					msg = await channel.send(content=content, embed=embed, file=file)
+					self.store.data["leaderboard_message_id"] = msg.id
+					await self.store.save()
 
-	def _refresh_submit_button_state(self) -> None:
-		for child in self.children:
-			if isinstance(child, discord.ui.Button) and child.custom_id == "scoreboard:submit_result":
+			# If another update was requested during the cooldown, run again.
+			if self._leaderboard_update_pending:
+				self._leaderboard_update_pending = False
+				continue
+			break
 				child.disabled = not (self.opponent_clan_role_id is not None and self.selected_score is not None)
 
 	@discord.ui.button(label="Submit Result", style=discord.ButtonStyle.success, disabled=True, custom_id="scoreboard:submit_result")
