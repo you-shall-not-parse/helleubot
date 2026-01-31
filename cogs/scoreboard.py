@@ -49,8 +49,26 @@ CLAN_ROLES: dict[str, int] = {
 IMAGE_TEMPLATE_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_blank1.jpg")
 FONT_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_font.ttf")
 
+# Optional: attach a video alongside the main "Submit Scores" embed.
+# Note: Discord does not render local mp4s *inside* an embed; it shows them as an attached video preview.
+# Set to None to disable.
+SCOREBOARD_VIDEO_PATH: Optional[str] = os.path.join(os.path.dirname(__file__), "leaguesubmtresults.mp4")
+
 
 log = logging.getLogger(__name__)
+
+
+def _maybe_scoreboard_video_file() -> Optional[discord.File]:
+	if not SCOREBOARD_VIDEO_PATH:
+		return None
+	try:
+		if not os.path.exists(SCOREBOARD_VIDEO_PATH):
+			return None
+		filename = os.path.basename(SCOREBOARD_VIDEO_PATH)
+		return discord.File(SCOREBOARD_VIDEO_PATH, filename=filename)
+	except Exception:
+		log.exception("Could not prepare scoreboard video file")
+		return None
 
 
 def _utcnow_iso() -> str:
@@ -701,11 +719,21 @@ class ScoreboardCog(commands.Cog):
 			message_id = self.store.data.get("scoreboard_message_id")
 			embed = _build_scoreboard_embed()
 			view = ScoreboardMainView()
+			video_file = _maybe_scoreboard_video_file()
+			video_filename = os.path.basename(SCOREBOARD_VIDEO_PATH) if SCOREBOARD_VIDEO_PATH else None
 
 			if message_id:
 				try:
 					msg = await channel.fetch_message(int(message_id))
-					await msg.edit(embed=embed, view=view)
+					# If the video is configured and already attached, don't re-upload on every restart.
+					if (
+						video_file
+						and video_filename
+						and not any(a.filename == video_filename for a in msg.attachments)
+					):
+						await msg.edit(embed=embed, view=view, attachments=[video_file])
+					else:
+						await msg.edit(embed=embed, view=view)
 					return
 				except discord.NotFound:
 					# Message was deleted; clear the stored ID and re-send.
@@ -716,7 +744,10 @@ class ScoreboardCog(commands.Cog):
 					log.exception("Could not edit existing scoreboard message")
 					return
 
-			msg = await channel.send(embed=embed, view=view)
+			if video_file:
+				msg = await channel.send(embed=embed, view=view, file=video_file)
+			else:
+				msg = await channel.send(embed=embed, view=view)
 			self.store.data["scoreboard_message_id"] = msg.id
 			await self.store.save()
 
