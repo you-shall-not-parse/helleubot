@@ -422,7 +422,26 @@ class OpponentSelect(discord.ui.Select):
 
 	async def callback(self, interaction: discord.Interaction):
 		view: "SubmitFlowView" = self.view  # type: ignore[assignment]
-		view.opponent_clan_role_id = int(self.values[0])
+		selected_value = str(self.values[0])
+		view.opponent_clan_role_id = int(selected_value)
+
+		# Make the selected opponent "stick" visually in the dropdown.
+		selected_label: Optional[str] = None
+		refreshed_options: list[discord.SelectOption] = []
+		for opt in self.options:
+			is_default = opt.value == selected_value
+			if is_default:
+				selected_label = opt.label
+			refreshed_options.append(
+				discord.SelectOption(
+					label=opt.label,
+					value=str(opt.value),
+					default=is_default,
+				)
+			)
+		self.options = refreshed_options
+		self.placeholder = selected_label or "Select the opposing clan…"
+
 		view._refresh_score_options()
 		await interaction.response.edit_message(view=view)
 
