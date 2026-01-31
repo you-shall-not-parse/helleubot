@@ -45,6 +45,10 @@ CLAN_ROLES: dict[str, int] = {
 	"OFIN": 1464764074985390090,
 }
 
+
+# Cooldown for leaderboard message updates (attachment edits are rate-limit heavy)
+LEADERBOARD_UPDATE_COOLDOWN_SECONDS: float = 180.0  # 3 minutes, adjust as needed
+
 # Image/font assets
 IMAGE_TEMPLATE_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_blank1.jpg")
 FONT_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_font.ttf")
@@ -735,8 +739,9 @@ class ScoreboardCog(commands.Cog):
 			async with self._leaderboard_lock:
 				now = asyncio.get_running_loop().time()
 				# Enforce cooldown between updates
-				if self._last_leaderboard_update_ts and (now - self._last_leaderboard_update_ts) < 60.0:
-					sleep_time = 60.0 - (now - self._last_leaderboard_update_ts)
+				cooldown = float(LEADERBOARD_UPDATE_COOLDOWN_SECONDS)
+				if self._last_leaderboard_update_ts and (now - self._last_leaderboard_update_ts) < cooldown:
+					sleep_time = cooldown - (now - self._last_leaderboard_update_ts)
 					await asyncio.sleep(sleep_time)
 				self._last_leaderboard_update_ts = asyncio.get_running_loop().time()
 
