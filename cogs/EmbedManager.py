@@ -18,8 +18,8 @@ AUTO_SYNC_INTERVAL_MINUTES: int = 30
 
 # Role that marks someone as an organiser/rep. Members must have BOTH this role and a clan role.
 # Prefer setting the ID; if 0/None, we'll fall back to a name lookup.
-EVENT_ORGANISERS_ROLE_ID: int = 0
-EVENT_ORGANISERS_ROLE_NAME: str = "Event Organisers"
+EVENT_ORGANISERS_ROLE_ID: int = 1462383205280649308
+EVENT_ORGANISERS_ROLE_NAME: str = "Clan Representative"
 
 # Clan roles (name -> role_id). Used for the clan reps lookup.
 # Keep in sync with other cogs (e.g. scoreboard/eventorganiser) if you change role IDs.
