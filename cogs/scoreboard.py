@@ -40,7 +40,8 @@ CLAN_ROLES: dict[str, int] = dict(CLAN_ROLE_IDS)
 
 
 # Cooldown for leaderboard message updates (attachment edits are rate-limit heavy)
-LEADERBOARD_UPDATE_COOLDOWN_SECONDS: float = 180.0  # 3 minutes, adjust as needed
+# Note: Discord can impose long per-route rate limits (10-20 mins) for attachment edits.
+LEADERBOARD_UPDATE_COOLDOWN_SECONDS: float = 1200.0  # 20 minutes, adjust as needed
 
 # Image/font assets
 IMAGE_TEMPLATE_PATH: str = os.path.join(os.path.dirname(__file__), "scoreboard_blank1.jpg")
@@ -547,10 +548,28 @@ class SubmitFlowView(discord.ui.View):
 			created_at=_utcnow_iso(),
 		)
 
+		log.info(
+			"Result submitted match_id=%s %s vs %s score=%s-%s by user_id=%s",
+			match_id,
+			_role_name_from_id(self.submitter_clan_role_id),
+			_role_name_from_id(self.opponent_clan_role_id),
+			a,
+			b,
+			interaction.user.id,
+		)
+
 		await cog.store.add_pending_match(match)
 		validation_message = await cog.post_validation_message(interaction.guild, match)
 		if validation_message:
 			await cog.store.link_validation_message(match.match_id, validation_message.id)
+			log.info(
+				"Validation posted match_id=%s message_id=%s channel_id=%s",
+				match_id,
+				validation_message.id,
+				getattr(validation_message.channel, "id", None),
+			)
+		else:
+			log.warning("Validation NOT posted match_id=%s", match_id)
 
 		await interaction.followup.send("Submitted! A validation message has been posted.", ephemeral=True)
 
@@ -643,6 +662,22 @@ class ScoreboardCog(commands.Cog):
 		self._leaderboard_lock = asyncio.Lock()
 		self._scoreboard_lock = asyncio.Lock()
 		self._last_leaderboard_update_ts: float = 0.0
+		# Leaderboard update telemetry
+		self._leaderboard_update_task: Optional[asyncio.Task] = None
+		self._leaderboard_update_pending: bool = False
+		self._leaderboard_update_request_count: int = 0
+		self._leaderboard_rate_limited_until_ts: float = 0.0
+
+	def _leaderboard_eta_seconds(self) -> float:
+		"""Best-effort estimate for when the leaderboard can next visibly update."""
+		now = asyncio.get_running_loop().time()
+		eta = 0.0
+		cooldown = float(LEADERBOARD_UPDATE_COOLDOWN_SECONDS)
+		if self._last_leaderboard_update_ts and (now - self._last_leaderboard_update_ts) < cooldown:
+			eta = max(eta, cooldown - (now - self._last_leaderboard_update_ts))
+		if self._leaderboard_rate_limited_until_ts and now < self._leaderboard_rate_limited_until_ts:
+			eta = max(eta, self._leaderboard_rate_limited_until_ts - now)
+		return max(0.0, float(eta))
 
 	async def cog_load(self) -> None:
 		await self.store.load()
@@ -718,13 +753,30 @@ class ScoreboardCog(commands.Cog):
 			await self.store.save()
 
 	async def ensure_leaderboard_message(self) -> None:
-		# Improved: Debounce and queue leaderboard updates to avoid rate limits.
-		if hasattr(self, '_leaderboard_update_task') and self._leaderboard_update_task and not self._leaderboard_update_task.done():
-			# If an update is already scheduled, just flag that another update is needed.
+		# Debounce/coalesce leaderboard updates to avoid rate limits.
+		self._leaderboard_update_request_count += 1
+		eta = 0.0
+		try:
+			eta = self._leaderboard_eta_seconds()
+		except Exception:
+			eta = 0.0
+
+		if self._leaderboard_update_task is not None and not self._leaderboard_update_task.done():
+			# Only one extra run is queued; multiple requests coalesce into that.
 			self._leaderboard_update_pending = True
+			log.info(
+				"Leaderboard update requested (coalesced). queued=1 eta~%.0fs requests=%s",
+				eta,
+				self._leaderboard_update_request_count,
+			)
 			return
 
 		self._leaderboard_update_pending = False
+		log.info(
+			"Leaderboard update queued. queued=0 eta~%.0fs requests=%s",
+			eta,
+			self._leaderboard_update_request_count,
+		)
 		self._leaderboard_update_task = asyncio.create_task(self._run_leaderboard_update())
 
 	async def _run_leaderboard_update(self):
@@ -735,8 +787,8 @@ class ScoreboardCog(commands.Cog):
 				cooldown = float(LEADERBOARD_UPDATE_COOLDOWN_SECONDS)
 				if self._last_leaderboard_update_ts and (now - self._last_leaderboard_update_ts) < cooldown:
 					sleep_time = cooldown - (now - self._last_leaderboard_update_ts)
+					log.info("Leaderboard update cooling down for %.1fs", sleep_time)
 					await asyncio.sleep(sleep_time)
-				self._last_leaderboard_update_ts = asyncio.get_running_loop().time()
 
 				if LEADERBOARD_CHANNEL_ID == 0:
 					return
@@ -770,10 +822,31 @@ class ScoreboardCog(commands.Cog):
 						msg = await channel.send(content=content, embed=embed, file=file)
 						self.store.data["leaderboard_message_id"] = msg.id
 						await self.store.save()
+
+					# Only mark the timestamp after a successful update.
+					self._last_leaderboard_update_ts = asyncio.get_running_loop().time()
+					self._leaderboard_rate_limited_until_ts = 0.0
+					log.info(
+						"Leaderboard updated message_id=%s requests=%s",
+						self.store.data.get("leaderboard_message_id"),
+						self._leaderboard_update_request_count,
+					)
 				except discord.HTTPException as e:
 					if e.status == 429:
 						retry_after = getattr(e, 'retry_after', 60)
+						self._leaderboard_rate_limited_until_ts = asyncio.get_running_loop().time() + float(retry_after)
+						eta2 = 0.0
+						try:
+							eta2 = self._leaderboard_eta_seconds()
+						except Exception:
+							eta2 = float(retry_after)
 						log.warning(f"Rate limited by Discord, retrying leaderboard update in {retry_after} seconds.")
+						log.warning(
+							"Leaderboard delayed by rate limit. eta~%.0fs pending=%s requests=%s",
+							eta2,
+							self._leaderboard_update_pending,
+							self._leaderboard_update_request_count,
+						)
 						await asyncio.sleep(retry_after)
 						continue
 					else:
@@ -786,6 +859,7 @@ class ScoreboardCog(commands.Cog):
 			# If another update was requested during the cooldown, run again.
 			if getattr(self, '_leaderboard_update_pending', False):
 				self._leaderboard_update_pending = False
+				log.info("Leaderboard update running again (coalesced pending request)")
 				continue
 			break
 
@@ -969,6 +1043,12 @@ class ScoreboardCog(commands.Cog):
 		if confirmed is None:
 			await interaction.followup.send("Failed to confirm match.", ephemeral=True)
 			return
+
+		log.info(
+			"Result confirmed match_id=%s by user_id=%s -> queue leaderboard update",
+			match_id,
+			interaction.user.id,
+		)
 
 		# Update validation message
 		try:
