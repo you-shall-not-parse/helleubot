@@ -9,23 +9,20 @@ import discord
 from discord.ext import commands, tasks
 
 from data_paths import data_path
+from league_config import (
+    EMBED_COLOR,
+    EVENT_DISPLAY_CHANNEL_ID,
+    KEYWORD_EMOJI_TAGS,
+    MAX_EVENTS_TO_DISPLAY,
+    UPDATE_INTERVAL_MINUTES,
+)
 
 logger = logging.getLogger(__name__)
 
 # =============================
-# CONFIG (EDIT THIS)
+# CONFIG
 # =============================
-# Channel ID where events will be posted
-EVENT_DISPLAY_CHANNEL_ID = 1464719794912755937  # Replace with your channel ID
-
-# How often to update the events display (in minutes)
-UPDATE_INTERVAL_MINUTES = 30
-
-# Maximum number of events to display - 25 is the max allowed by Discord per embed
-MAX_EVENTS_TO_DISPLAY = 25
-
-# Color for the embed
-EMBED_COLOR = 0x5865F2  # Discord blurple
+# (Moved to league_config.py)
 
 # Path to save events JSON
 EVENTS_JSON_PATH = data_path("levents_history.json")
@@ -59,19 +56,6 @@ EVENTS_THREAD_STATE_PATH = data_path("levents_threads_state.json")
 #
 # Put the emoji name in Discord's short-name format (e.g. ":48th:") and make sure
 # the custom emoji exists in the same server as the event.
-KEYWORD_EMOJI_TAGS: dict[str, str] = {
-    "RDG": ":RDG:",
-    "RMC": ":RMC:",
-    "48th": ":48th:",
-    "7DR": ":7DR:",
-    "7PD": ":7PD:",
-    "ITHL": ":flag_it:",
-    "OFIN": ":flag_fi:",
-    "PG60": ":flag_de:",
-}
-
-
-
 class EventDisplayCog(commands.Cog):
     """
     A cog that reads Discord scheduled events and displays them in an embed.

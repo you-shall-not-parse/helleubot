@@ -6,6 +6,14 @@ import re
 from typing import Optional
 
 from data_paths import data_path
+from league_config import (
+    BYE_TEAM_NAME,
+    CLAN_DISPLAY_ORDER,
+    CLAN_ROLE_IDS,
+    FIXTURES_BY_ROUND,
+    KEYWORD_EMOJI_TAGS,
+    format_round_window,
+)
 
 # ---------------- CONFIG ----------------
 GUILD_ID = 1462382487622914079  # your guild ID
@@ -21,30 +29,7 @@ AUTO_SYNC_INTERVAL_MINUTES: int = 30
 EVENT_ORGANISERS_ROLE_ID: int = 1462383205280649308
 EVENT_ORGANISERS_ROLE_NAME: str = "Clan Representative"
 
-# Clan roles (name -> role_id). Used for the clan reps lookup.
-# Keep in sync with other cogs (e.g. scoreboard/eventorganiser) if you change role IDs.
-CLAN_ROLE_IDS: dict[str, int] = {
-    "RMC": 1462558256147857408,
-    "7DR": 1462383332598743080,
-    "RDG": 1462558410364031097,
-    "7PD": 1464763568506536000,
-    "PG60": 1464763651108896778,
-    "ITHL": 1464763753441788117,
-    "48th": 1462558355166986261,
-    "OFIN": 1464764074985390090,
-}
 
-# Team/keyword emoji tagging (like eventscalendar)
-KEYWORD_EMOJI_TAGS: dict[str, str] = {
-    "RDG": ":RDG:",
-    "RMC": ":RMC:",
-    "48th": ":48th:",
-    "7DR": ":7DR:",
-    "7PD": ":7PD:",
-    "ITHL": ":flag_it:",
-    "OFIN": ":flag_fi:",
-    "PG60": ":flag_de:",
-}
 
 SCHEDULE_TEAMS_FIELD_NAME: str = "👥Teams Participating"
 SCHEDULE_REPS_FIELD_NAME: str = "👤 Clan reps"
@@ -469,94 +454,25 @@ class EmbedManager(commands.Cog):
         embed4.add_field(
             name="👥Teams Participating",
             value=(
-                "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, BYE\n"
+                ", ".join([*CLAN_DISPLAY_ORDER, BYE_TEAM_NAME]) + "\n"
             ),
             inline=False,
         )
 
-        embed4.add_field(
-            name="Round 1",
-            value=(
-                "2nd March - 15th March 2026\n"
-                "RMC vs BYE\n"
-                "7DR vs 48th\n"
-                "RDG vs ITHL\n"
-                "7PD vs PG60"
-            ),
-            inline=False,
-        )
+        for round_no in sorted(FIXTURES_BY_ROUND.keys()):
+            window = format_round_window(round_no)
+            fixtures = FIXTURES_BY_ROUND.get(round_no, [])
+            lines: list[str] = []
+            if window:
+                lines.append(window)
+            for a, b in fixtures:
+                lines.append(f"{a} vs {b}")
 
-        embed4.add_field(
-            name="Round 2",
-            value=(
-                "16th March - 29th March 2026\n"
-                "RMC vs 48th\n"
-                "BYE vs ITHL\n"
-                "7DR vs PG60\n"
-                "RDG vs 7PD"
-            ),
-            inline=False,
-        )
-
-        embed4.add_field(
-            name="Round 3",
-            value=(
-                "30th March - 12th April 2026\n"
-                "RMC vs ITHL\n"
-                "48th vs PG60\n"
-                "BYE vs 7PD\n"
-                "7DR vs RDG"
-            ),
-            inline=False,
-        )
-
-        embed4.add_field(
-            name="Round 4",
-            value=(
-                "13th April - 26th April 2026\n"
-                "RMC vs PG60\n"
-                "ITHL vs 7PD\n"
-                "48th vs RDG\n"
-                "BYE vs 7DR"
-            ),
-            inline=False,
-        )
-
-        embed4.add_field(
-            name="Round 5",
-            value=(
-                "27th April - 10th May 2026\n"
-                "RMC vs 7PD\n"
-                "PG60 vs RDG\n"
-                "ITHL vs 7DR\n"
-                "48th vs BYE"
-            ),
-            inline=False,
-        )
-
-        embed4.add_field(
-            name="Round 6",
-            value=(
-                "11th May - 24th May 2026\n"
-                "RMC vs RDG\n"
-                "7PD vs 7DR\n"
-                "PG60 vs BYE\n"
-                "ITHL vs 48th"
-            ),
-            inline=False,
-        )
-
-        embed4.add_field(
-            name="Round 7",
-            value=(
-                "25th May - 7th June 2026\n"
-                "RMC vs 7DR\n"
-                "RDG vs BYE\n"
-                "7PD vs 48th\n"
-                "PG60 vs ITHL"
-            ),
-            inline=False,
-        )
+            embed4.add_field(
+                name=f"Round {round_no}",
+                value="\n".join(lines).strip() or "—",
+                inline=False,
+            )
 
         # Image URLs for EMBED 4 (paste Discord CDN links here)
         embed4_image_url = "https://cdn.discordapp.com/attachments/1464650328736792770/1464650483837702325/image.png?ex=69763d8f&is=6974ec0f&hm=93b335df920c66157f14d2e62da090ca1fe55769b27fc6973a3976d8bf385681"

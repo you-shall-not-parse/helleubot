@@ -12,6 +12,7 @@ import discord
 from discord.ext import commands
 
 from data_paths import data_path
+from league_config import CLAN_ROLE_IDS, ROUND_WINDOWS
 
 # =============================
 # CONFIG (EDIT THIS)
@@ -39,28 +40,7 @@ SCHEDULED_EVENT_GUILD_ID = GUILD_ID
 # Optional: channel to associate to the scheduled event (voice/stage). Leave None to create an external event.
 SCHEDULED_EVENT_CHANNEL_ID: Optional[int] = None
 
-# Clan roles (name -> role_id). User must have exactly one of these to start.
-CLAN_ROLE_IDS: dict[str, int] = {
-	"RMC": 1462558256147857408,
-	"7DR": 1462383332598743080,
-	"RDG": 1462558410364031097,
-	"7PD": 1464763568506536000,
-	"PG60": 1464763651108896778,
-	"ITHL": 1464763753441788117,
-	"48th": 1462558355166986261,
-	"OFIN": 1464764074985390090,
-}
 
-# Round windows (inclusive) for validation.
-ROUND_WINDOWS: dict[int, tuple[date, date]] = {
-	1: (date(2026, 3, 2), date(2026, 3, 15)),
-	2: (date(2026, 3, 16), date(2026, 3, 29)),
-	3: (date(2026, 3, 30), date(2026, 4, 12)),
-	4: (date(2026, 4, 13), date(2026, 4, 26)),
-	5: (date(2026, 4, 27), date(2026, 5, 10)),
-	6: (date(2026, 5, 11), date(2026, 5, 24)),
-	7: (date(2026, 5, 25), date(2026, 6, 7)),
-}
 
 # Maps and midpoints (edit these lists)
 MAP_POOL: list[str] = [

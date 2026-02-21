@@ -12,6 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from data_paths import data_path
+from league_config import CLAN_ROLE_IDS
 
 
 # -----------------------------
@@ -34,16 +35,8 @@ VALIDATION_CHANNEL_ID: int = 1462382488784470181
 LEADERBOARD_CHANNEL_ID: int = 1462384116376014911
 
 # Role IDs for each clan (name -> role_id)
-CLAN_ROLES: dict[str, int] = {
-	"RMC": 1462558256147857408,
-	"7DR": 1462383332598743080,
-	"RDG": 1462558410364031097,
-	"7PD": 1464763568506536000,
-	"PG60": 1464763651108896778,
-	"ITHL": 1464763753441788117,
-	"48th": 1462558355166986261,
-	"OFIN": 1464764074985390090,
-}
+# Source of truth is league_config.py
+CLAN_ROLES: dict[str, int] = dict(CLAN_ROLE_IDS)
 
 
 # Cooldown for leaderboard message updates (attachment edits are rate-limit heavy)
