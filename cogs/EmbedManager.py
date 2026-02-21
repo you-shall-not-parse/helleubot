@@ -1,8 +1,9 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import json
 import os
 import re
+from typing import Optional
 
 from data_paths import data_path
 
@@ -11,6 +12,27 @@ GUILD_ID = 1462382487622914079  # your guild ID
 COG_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(COG_DIR, os.pardir))
 DATA_FILE = data_path("stored_embeds.json")
+
+# Auto-refresh embeds periodically so dynamic sections (like clan reps) stay updated.
+AUTO_SYNC_INTERVAL_MINUTES: int = 30
+
+# Role that marks someone as an organiser/rep. Members must have BOTH this role and a clan role.
+# Prefer setting the ID; if 0/None, we'll fall back to a name lookup.
+EVENT_ORGANISERS_ROLE_ID: int = 0
+EVENT_ORGANISERS_ROLE_NAME: str = "Event Organisers"
+
+# Clan roles (name -> role_id). Used for the clan reps lookup.
+# Keep in sync with other cogs (e.g. scoreboard/eventorganiser) if you change role IDs.
+CLAN_ROLE_IDS: dict[str, int] = {
+    "RMC": 1462558256147857408,
+    "7DR": 1462383332598743080,
+    "RDG": 1462558410364031097,
+    "7PD": 1464763568506536000,
+    "PG60": 1464763651108896778,
+    "ITHL": 1464763753441788117,
+    "48th": 1462558355166986261,
+    "OFIN": 1464764074985390090,
+}
 
 # Team/keyword emoji tagging (like eventscalendar)
 KEYWORD_EMOJI_TAGS: dict[str, str] = {
@@ -23,6 +45,9 @@ KEYWORD_EMOJI_TAGS: dict[str, str] = {
     "OFIN": ":flag_fi:",
     "PG60": ":flag_de:",
 }
+
+SCHEDULE_TEAMS_FIELD_NAME: str = "👥Teams Participating"
+SCHEDULE_REPS_FIELD_NAME: str = "👤 Clan reps"
 
 # ---------------- HELPER FUNCTIONS ----------------
 def load_data():
@@ -44,6 +69,132 @@ class EmbedManager(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data = load_data()
+        self._auto_sync_task.start()
+
+    def cog_unload(self):
+        if self._auto_sync_task.is_running():
+            self._auto_sync_task.cancel()
+
+    @tasks.loop(minutes=AUTO_SYNC_INTERVAL_MINUTES)
+    async def _auto_sync_task(self):
+        await self.sync_all_embeds()
+
+    @_auto_sync_task.before_loop
+    async def _before_auto_sync_task(self):
+        await self.bot.wait_until_ready()
+
+    def _get_role_by_name(self, guild: discord.Guild, role_name: str) -> Optional[discord.Role]:
+        target = str(role_name or "").strip().lower()
+        if not target:
+            return None
+        for r in getattr(guild, "roles", []):
+            if str(getattr(r, "name", "")).strip().lower() == target:
+                return r
+        return None
+
+    def _resolve_event_organisers_role(self, guild: discord.Guild) -> Optional[discord.Role]:
+        if EVENT_ORGANISERS_ROLE_ID:
+            return guild.get_role(EVENT_ORGANISERS_ROLE_ID)
+        return self._get_role_by_name(guild, EVENT_ORGANISERS_ROLE_NAME)
+
+    async def _get_guild_members(self, guild: discord.Guild) -> list[discord.Member]:
+        members = list(getattr(guild, "members", []) or [])
+        if members:
+            return members
+
+        # Try chunking (works only if members intent is enabled).
+        try:
+            await guild.chunk(cache=True)
+            members = list(getattr(guild, "members", []) or [])
+            if members:
+                return members
+        except Exception:
+            pass
+
+        # Fall back to fetch_members (also requires members intent).
+        try:
+            fetched: list[discord.Member] = [m async for m in guild.fetch_members(limit=None)]
+            return fetched
+        except Exception:
+            return []
+
+    def _extract_schedule_clans(self, embed: discord.Embed) -> list[str]:
+        """Best-effort extract of clan shortnames from the schedule embed."""
+
+        raw = ""
+        for f in list(getattr(embed, "fields", []) or []):
+            if str(getattr(f, "name", "")).strip() == SCHEDULE_TEAMS_FIELD_NAME:
+                raw = str(getattr(f, "value", "") or "")
+                break
+
+        if not raw:
+            return list(CLAN_ROLE_IDS.keys())
+
+        # Split on commas/newlines and normalise. Values may already have emojis appended
+        # (e.g. 'RMC <:RMC:123>'), so we take the first whitespace token.
+        tokens = [t.strip() for t in re.split(r"[\n,]", raw) if t and t.strip()]
+        clans: list[str] = []
+        for t in tokens:
+            head = t.split()[0].strip() if t.split() else ""
+            if head in CLAN_ROLE_IDS and head not in clans:
+                clans.append(head)
+        return clans or list(CLAN_ROLE_IDS.keys())
+
+    async def _build_clan_reps_value(self, guild: discord.Guild, embed: discord.Embed) -> str:
+        organiser_role = self._resolve_event_organisers_role(guild)
+        if organiser_role is None:
+            return "(Missing Event Organisers role config)"
+
+        members = await self._get_guild_members(guild)
+
+        clans = self._extract_schedule_clans(embed)
+        lines: list[str] = []
+
+        for clan in clans:
+            clan_role_id = CLAN_ROLE_IDS.get(clan)
+            clan_role = guild.get_role(clan_role_id) if clan_role_id else None
+
+            if clan_role is None:
+                lines.append(f"**{clan}:** —")
+                continue
+
+            reps = [
+                m
+                for m in members
+                if isinstance(m, discord.Member)
+                and not getattr(m, "bot", False)
+                and clan_role in getattr(m, "roles", [])
+                and organiser_role in getattr(m, "roles", [])
+            ]
+            reps.sort(key=lambda m: str(getattr(m, "display_name", "")).lower())
+
+            if reps:
+                mentions = " ".join(m.mention for m in reps)
+                lines.append(f"**{clan}:** {mentions}")
+            else:
+                lines.append(f"**{clan}:** —")
+
+        value = "\n".join(lines).strip() or "—"
+        # Embed field limit is 1024 characters.
+        if len(value) > 1024:
+            value = value[:1021] + "..."
+        return value
+
+    async def _upsert_schedule_clan_reps(self, guild: discord.Guild, embed: discord.Embed) -> None:
+        reps_value = await self._build_clan_reps_value(guild, embed)
+
+        original_fields = list(getattr(embed, "fields", []) or [])
+        kept: list[tuple[str, str, bool]] = []
+        for f in original_fields:
+            name = str(getattr(f, "name", "") or "")
+            if name == SCHEDULE_REPS_FIELD_NAME:
+                continue
+            kept.append((name, f.value, f.inline))
+
+        embed.clear_fields()
+        for name, value, inline in kept:
+            embed.add_field(name=name, value=value, inline=inline)
+        embed.add_field(name=SCHEDULE_REPS_FIELD_NAME, value=reps_value, inline=False)
 
     def _resolve_custom_emoji(self, guild: discord.Guild, emoji_tag: str) -> str:
         """Resolve a tag like ':name:' to '<:name:id>' if possible."""
@@ -318,7 +469,7 @@ class EmbedManager(commands.Cog):
         embed4.add_field(
             name="👥Teams Participating",
             value=(
-                "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, OFIN\n"
+                "RMC, 7DR, RDG, 7PD, PG60, ITHL, 48th, BYE\n"
             ),
             inline=False,
         )
@@ -327,7 +478,7 @@ class EmbedManager(commands.Cog):
             name="Round 1",
             value=(
                 "2nd March - 15th March 2026\n"
-                "RMC vs OFIN\n"
+                "RMC vs BYE\n"
                 "7DR vs 48th\n"
                 "RDG vs ITHL\n"
                 "7PD vs PG60"
@@ -340,7 +491,7 @@ class EmbedManager(commands.Cog):
             value=(
                 "16th March - 29th March 2026\n"
                 "RMC vs 48th\n"
-                "OFIN vs ITHL\n"
+                "BYE vs ITHL\n"
                 "7DR vs PG60\n"
                 "RDG vs 7PD"
             ),
@@ -353,7 +504,7 @@ class EmbedManager(commands.Cog):
                 "30th March - 12th April 2026\n"
                 "RMC vs ITHL\n"
                 "48th vs PG60\n"
-                "OFIN vs 7PD\n"
+                "BYE vs 7PD\n"
                 "7DR vs RDG"
             ),
             inline=False,
@@ -366,7 +517,7 @@ class EmbedManager(commands.Cog):
                 "RMC vs PG60\n"
                 "ITHL vs 7PD\n"
                 "48th vs RDG\n"
-                "OFIN vs 7DR"
+                "BYE vs 7DR"
             ),
             inline=False,
         )
@@ -378,7 +529,7 @@ class EmbedManager(commands.Cog):
                 "RMC vs 7PD\n"
                 "PG60 vs RDG\n"
                 "ITHL vs 7DR\n"
-                "48th vs OFIN"
+                "48th vs BYE"
             ),
             inline=False,
         )
@@ -389,7 +540,7 @@ class EmbedManager(commands.Cog):
                 "11th May - 24th May 2026\n"
                 "RMC vs RDG\n"
                 "7PD vs 7DR\n"
-                "PG60 vs OFIN\n"
+                "PG60 vs BYE\n"
                 "ITHL vs 48th"
             ),
             inline=False,
@@ -400,7 +551,7 @@ class EmbedManager(commands.Cog):
             value=(
                 "25th May - 7th June 2026\n"
                 "RMC vs 7DR\n"
-                "RDG vs OFIN\n"
+                "RDG vs BYE\n"
                 "7PD vs 48th\n"
                 "PG60 vs ITHL"
             ),
@@ -436,6 +587,7 @@ class EmbedManager(commands.Cog):
         # Apply team emoji tagging to the schedule embed (Embed 4)
         if key == "schedule" and hasattr(channel, "guild") and channel.guild is not None:
             self._apply_schedule_emoji_tags(channel.guild, embed_to_post)
+            await self._upsert_schedule_clan_reps(channel.guild, embed_to_post)
         stored_id = self.data.get(key)
 
         msg = None

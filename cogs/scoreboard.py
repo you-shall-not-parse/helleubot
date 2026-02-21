@@ -192,7 +192,7 @@ def _build_leaderboard_text(stats: dict[str, Any]) -> str:
 def _build_scoreboard_embed() -> discord.Embed:
 	embed = discord.Embed(
 		title="Submit Match Scores",
-		description="Click the button below to submit a match result for validation by the opposing clan.",
+		description="- Click the button below to submit a match result for validation by the opposing clan. \n - It will then post a submission in <#1462382488784470181> for the opposing side to confirm \n - When confirmed the league table updates in <#1462384116376014911>, this may queue and take up to 5-10 mins \n - Make sure you have linked the <#1462384116376014911> announcement channel as a feed in your clan discord or just copy and paste the table if you prefer",
 		colour=discord.Colour.green(),
 	)
 	return embed
