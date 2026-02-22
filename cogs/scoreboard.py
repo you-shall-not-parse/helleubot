@@ -271,19 +271,42 @@ class ScoreboardStore:
 
 	async def _ensure_clans_locked(self) -> None:
 		stats: dict[str, Any] = self.data.setdefault("clan_stats", {})
+		allowed_keys = {str(role_id) for role_id in CLAN_ROLES.values()}
+
+		# Remove any clans that are no longer configured (e.g. renamed/removed teams).
+		for key in list(stats.keys()):
+			if key not in allowed_keys:
+				stats.pop(key, None)
+
+		# Ensure all configured clans exist and normalize fields.
 		for clan_name, role_id in CLAN_ROLES.items():
 			key = str(role_id)
-			stats.setdefault(
-				key,
-				{
-					"name": clan_name,
-					"w": 0,
-					"l": 0,
-					"played": 0,
-					"maps_for": 0,
-					"maps_against": 0,
-				},
-			)
+			entry = stats.get(key)
+			if not isinstance(entry, dict):
+				entry = {}
+				stats[key] = entry
+
+			# Back-compat for older field names.
+			if "for" in entry and "maps_for" not in entry:
+				entry["maps_for"] = entry.get("for")
+			if "against" in entry and "maps_against" not in entry:
+				entry["maps_against"] = entry.get("against")
+
+			entry["name"] = clan_name
+			entry.setdefault("w", 0)
+			entry.setdefault("l", 0)
+			entry.setdefault("played", int(entry.get("w", 0)) + int(entry.get("l", 0)))
+			entry.setdefault("maps_for", 0)
+			entry.setdefault("maps_against", 0)
+
+		# If the latest-result line references a removed clan, clear it so it won't render.
+		last = self.data.get("last_result")
+		if isinstance(last, dict):
+			allowed_names = set(CLAN_ROLES.keys())
+			a_name = str(last.get("a_name") or "")
+			b_name = str(last.get("b_name") or "")
+			if a_name not in allowed_names or b_name not in allowed_names:
+				self.data["last_result"] = None
 
 	async def ensure_clans(self) -> None:
 		async with self._lock:
