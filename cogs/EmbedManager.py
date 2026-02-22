@@ -339,7 +339,7 @@ class EmbedManager(commands.Cog):
             name="🗺️ Maps, Sides & Servers",
             value=(
                 "- One map per round — all teams play the same map then the map leaves the pool\n"
-                "- Maps are chosen by the league admins (method TBC) and all maps except Stalingrad, Driel, Remagen, Smolensk are in the mix! Be prepared for a wheely big surprise...\n"
+                "- Maps are chosen by the league admins and all maps except Stalingrad, Driel, Remagen, Smolensk are in the mix!\n"
                 "- Mid-point: Spin the Wheel\n"
                 "- Sides and Server host decided by coin flip\n"
                 "- Streaming is permitted but must not be live and must be agreed before the match with opponent"
@@ -362,7 +362,7 @@ class EmbedManager(commands.Cog):
                 "- Admin cam logs / player_ids may be requested by the opposing team\n"
                 "- No win condition within the first 30 minutes\n"
                 "- Deliberate clipping inside an asset that prevents you being shot but allows you to shoot out is prohibited, this does not include terrain clipping as a result of natural gameplay\n"
-                "- The use of rooftops is permitted\n"
+                "- The use of rooftops is permitted provided the above rule is not violated\n"
                 "- The use of cronus/XIM or other controller emulator is prohibited\n"
                 "- Hired guns are prohibited however coalition teams may be formed and fielded\n"
                 "- Players transferred between clans competing in the current season are banned from playing for their new clan until the following season\n"
@@ -374,7 +374,7 @@ class EmbedManager(commands.Cog):
             name=":boom: Artillery, SPA & Panther",
             value=(
                 "- The use of HLL log utilities is prohibited, trust is key in this league\n"
-                "- Only one artillery squad may be opened per team at any time.\n"
+                "- Multiple artillery squads can be fielded but only one static gun is permitted.\n"
                 "- Artillery Observer (SL) must operate the gun and cannot move freely on the map\n"
                 "- Designated Artillery Player (DAP) & Reloader:\n"
                 "   - First player to get a kill becomes the DAP.\n"
@@ -382,9 +382,9 @@ class EmbedManager(commands.Cog):
                 "   - Both must stay on one assigned gun; you cannot switch guns.\n"
                 "   - Both cannot leave the gun or attack enemies.\n"
                 "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
-                "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ permitted to move it\n"
+                "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ is permitted to move it\n"
                 "- Commander artillery is prohibited\n" 
-                "- Panther tank is prohibited unless otherwise explicitly agreed by both teams, driving (only) within the HQ permitted to move it\n"
+                "- Panther tank is prohibited unless otherwise explicitly agreed by both teams, driving (only) within the HQ is permitted to move it\n"
                 "- Failure to comply may result in forfeiture of the match and/or points deducted\n"
             ),
             inline=False,
