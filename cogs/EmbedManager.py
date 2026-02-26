@@ -344,7 +344,7 @@ class EmbedManager(commands.Cog):
                 "- Maps are chosen by spin the wheel before the round commences and all maps except Stalingrad, Driel, Remagen, Smolensk are in the mix!\n"
                 "- Mid-point: Spin the Wheel\n"
                 "- Sides and Server host decided by using <#1464726144367464685>\n"
-                "- Fixture player numbers between **30–50 players** as agreed with opponent using <#1464726144367464685>"
+                "- Fixture player numbers between **30–50 players** as agreed with opponent using <#1464726144367464685>\n"
                 "- Streaming is permitted but must not be live and must be agreed before the match with opponent"
             ),
             inline=False,
@@ -364,7 +364,7 @@ class EmbedManager(commands.Cog):
             value=(
                 "- No roster locks required\n"
                 "- Admin cam logs / player_ids may be requested by the opposing team\n"
-                "- No win condition within the first 30 minutes\n"
+                "- **No win condition within the first 30 minutes\n**"
                 "- Deliberate clipping inside an asset that prevents you being shot but allows you to shoot out is prohibited, this does not include terrain clipping as a result of natural gameplay\n"
                 "- The use of rooftops is permitted provided the above rule is not violated\n"
                 "- The use of cronus/XIM or other controller emulator is prohibited\n"
