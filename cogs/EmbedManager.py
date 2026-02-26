@@ -332,8 +332,8 @@ class EmbedManager(commands.Cog):
             value=(
                 "- Each round has a **2-week window**\n"
                 "- Fixtures are automated and in <#1462388344205082685>\n"
-                "- Fixtures are orgaised by using <#1464726144367464685>\n"
-                "- Once you have organised your fixture it goes into <#1464719794912755937>"
+                "- Fixtures are organised by using <#1464726144367464685>\n"
+                "- Once you have organised your fixture it magically appears in <#1464719794912755937>"
             ),
             inline=False,
         )
