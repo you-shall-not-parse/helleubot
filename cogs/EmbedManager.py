@@ -331,7 +331,9 @@ class EmbedManager(commands.Cog):
             name="🔢 Rounds & Scheduling",
             value=(
                 "- Each round has a **2-week window**\n"
-                "- Fixture player numbers between **30–50 players** as agreed with opponent in <#1462382488784470181>"
+                "- Fixtures are automated and in <#1462388344205082685>\n"
+                "- Fixtures are orgaised by using <#1464726144367464685>\n"
+                "- Once you have organised your fixture it goes into <#1464719794912755937>"
             ),
             inline=False,
         )
@@ -339,9 +341,10 @@ class EmbedManager(commands.Cog):
             name="🗺️ Maps, Sides & Servers",
             value=(
                 "- One map per round — all teams play the same map then the map leaves the pool\n"
-                "- Maps are chosen by the league admins and all maps except Stalingrad, Driel, Remagen, Smolensk are in the mix!\n"
+                "- Maps are chosen by spin the wheel before the round commences and all maps except Stalingrad, Driel, Remagen, Smolensk are in the mix!\n"
                 "- Mid-point: Spin the Wheel\n"
-                "- Sides and Server host decided by coin flip\n"
+                "- Sides and Server host decided by using <#1464726144367464685>\n"
+                "- Fixture player numbers between **30–50 players** as agreed with opponent using <#1464726144367464685>"
                 "- Streaming is permitted but must not be live and must be agreed before the match with opponent"
             ),
             inline=False,
@@ -349,8 +352,9 @@ class EmbedManager(commands.Cog):
         embed2.add_field(
             name="🏆 Scoring & Standings",
             value=(
+                "- Scores are subbitted by using <#1462387812815998997>"
                 "- Scoring is based solely on **objectives scored per match**\n"
-                "- League table ordered by **total objectives accumulated**\n"
+                "- League table ordered by **total objectives accumulated** and is automated in <#1462384116376014911> \n"
                 "- The team with the better W/L record will be awarded the higher seed, if this is tied then a final match shall be played to determine the first-place seed"
             ),
             inline=False,

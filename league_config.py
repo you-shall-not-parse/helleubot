@@ -18,6 +18,8 @@ CLAN_ROLE_IDS: dict[str, int] = {
     "PG60": 1464763651108896778,
     "ITHL": 1464763753441788117,
     "48th": 1462558355166986261,
+    "ZFG": 1476529643128356925,
+    "CROWS": 1464764074985390090,
 }
 
 
@@ -33,8 +35,10 @@ KEYWORD_EMOJI_TAGS: dict[str, str] = {
     "48th": ":48th:",
     "7DR": ":7DR:",
     "7PD": ":7PD:",
-    "ITHL": ":flag_it:",
+    "ITHL": ":ITHL:",
     "PG60": ":flag_de:",
+    "ZFG": ":ZFG:",
+    "CROWS": ":CROWS:", 
 }
 
 
@@ -75,6 +79,9 @@ ROUND_WINDOWS: dict[int, tuple[date, date]] = {
     5: (date(2026, 4, 27), date(2026, 5, 10)),
     6: (date(2026, 5, 11), date(2026, 5, 24)),
     7: (date(2026, 5, 25), date(2026, 6, 7)),
+    8: (date(2026, 6, 8), date(2026, 6, 21)),
+    9: (date(2026, 6, 22), date(2026, 7, 5)),
+
 }
 
 
@@ -97,14 +104,18 @@ def format_round_window(round_no: int) -> str:
     return f"{start_str} - {end_str}"
 
 
+# ...existing code...
+
 # Fixtures by round. Each entry is a list of (home, away) display names.
 # Use BYE_TEAM_NAME for the bye week.
 FIXTURES_BY_ROUND: dict[int, list[tuple[str, str]]] = {
-    1: [("RMC", BYE_TEAM_NAME), ("7DR", "48th"), ("RDG", "ITHL"), ("7PD", "PG60")],
-    2: [("RMC", "48th"), (BYE_TEAM_NAME, "ITHL"), ("7DR", "PG60"), ("RDG", "7PD")],
-    3: [("RMC", "ITHL"), ("48th", "PG60"), (BYE_TEAM_NAME, "7PD"), ("7DR", "RDG")],
-    4: [("RMC", "PG60"), ("ITHL", "7PD"), ("48th", "RDG"), (BYE_TEAM_NAME, "7DR")],
-    5: [("RMC", "7PD"), ("PG60", "RDG"), ("ITHL", "7DR"), ("48th", BYE_TEAM_NAME)],
-    6: [("RMC", "RDG"), ("7PD", "7DR"), ("PG60", BYE_TEAM_NAME), ("ITHL", "48th")],
-    7: [("RMC", "7DR"), ("RDG", BYE_TEAM_NAME), ("7PD", "48th"), ("PG60", "ITHL")],
+    1: [("RMC", "ZFG"), ("7DR", "48th"), ("RDG", "ITHL"), ("7PD", "PG60"), (BYE_TEAM_NAME, "CROWS")],
+    2: [("RMC", "48th"), ("ZFG", "ITHL"), ("7DR", "PG60"), ("RDG", "CROWS"), (BYE_TEAM_NAME, "7PD")],
+    3: [("RMC", "ITHL"), ("48th", "PG60"), ("ZFG", "CROWS"), ("RDG", "7PD"), (BYE_TEAM_NAME, "7DR")],
+    4: [("RMC", "PG60"), ("ITHL", "CROWS"), ("ZFG", "7PD"), ("7DR", "RDG"), (BYE_TEAM_NAME, "48th")],
+    5: [("RMC", "CROWS"), ("ITHL", "7PD"), ("48th", "RDG"), ("ZFG", "7DR"), (BYE_TEAM_NAME, "PG60")],
+    6: [("CROWS", "7PD"), ("PG60", "RDG"), ("ITHL", "7DR"), ("48th", "ZFG"), (BYE_TEAM_NAME, "RMC")],
+    7: [("RMC", "7PD"), ("CROWS", "7DR"), ("PG60", "ZFG"), ("ITHL", "48th"), (BYE_TEAM_NAME, "RDG")],
+    8: [("RMC", "RDG"), ("7PD", "7DR"), ("CROWS", "48th"), ("PG60", "ITHL"), (BYE_TEAM_NAME, "ZFG")],
+    9: [("RMC", "7DR"), ("RDG", "ZFG"), ("7PD", "48th"), ("CROWS", "PG60"), (BYE_TEAM_NAME, "ITHL")],
 }
