@@ -364,7 +364,7 @@ class EmbedManager(commands.Cog):
             value=(
                 "- No roster locks required\n"
                 "- Admin cam logs / player_ids may be requested by the opposing team\n"
-                "- **No win condition within the first 30 minutes\n**"
+                "- **No win condition within the first 30 minutes**\n"
                 "- Deliberate clipping inside an asset that prevents you being shot but allows you to shoot out is prohibited, this does not include terrain clipping as a result of natural gameplay\n"
                 "- The use of rooftops is permitted provided the above rule is not violated\n"
                 "- The use of cronus/XIM or other controller emulator is prohibited\n"
