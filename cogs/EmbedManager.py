@@ -388,7 +388,7 @@ class EmbedManager(commands.Cog):
                 "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
                 "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ is permitted to move it\n"
                 "- Commander artillery is prohibited\n" 
-                "- Panther tank is prohibited unless otherwise explicitly agreed by both teams, driving (only) within the HQ is permitted to move it\n"
+                "- Panther prohibitied (unless driving in HQ) unless agreed by both teams and Tiger becomes banned as a result to prevent unfair axis spawn advantage\n"
                 "- Failure to comply may result in forfeiture of the match and/or points deducted\n"
             ),
             inline=False,
