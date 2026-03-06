@@ -371,11 +371,12 @@ class EmbedManager(commands.Cog):
                 "- Hired guns are prohibited however coalition teams may be formed and fielded\n"
                 "- Players transferred between clans competing in the current season are banned from playing for their new clan until the following season\n"
                 "- Footage and consequence is subject to review by league admins if submitted as part of a protest\n"
+                "- Panther tank is prohibited (banned) unless agreed by both teams for use, Tiger tank becomes prohibited (banned) to prevent unfair axis spawn advantage\n"
             ),
             inline=False,
         )
         embed2.add_field(
-            name=":boom: Artillery, SPA & Panther",
+            name=":boom: Artillery & SPA",
             value=(
                 "- The use of HLL log utilities is prohibited.\n"
                 "- Multiple artillery squads can be fielded but only one static gun is permitted.\n"
@@ -388,8 +389,7 @@ class EmbedManager(commands.Cog):
                 "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
                 "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ is permitted to move it\n"
                 "- Commander artillery is prohibited\n" 
-                "- Panther tank is prohibited (banned) unless agreed by both teams for use, Tiger tank becomes prohibited (banned) to prevent unfair axis spawn advantage\n"
-                "- Artillery glitch can happen whereby rounds won't fire, gunner (and loader if used) can leave the gun and do join the game as another class provided that a clip is submitted showing the gun not loading 2-3 times.\n"
+                "- Artillery glitch can happen whereby rounds won't fire, gunner (and loader if used) can leave the gun provided that a clip is submitted showing the gun not loading 2-3 times.\n"
             ),
             inline=False,
         )
