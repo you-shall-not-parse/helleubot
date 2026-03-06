@@ -377,20 +377,19 @@ class EmbedManager(commands.Cog):
         embed2.add_field(
             name=":boom: Artillery, SPA & Panther",
             value=(
-                "- The use of HLL log utilities is prohibited, trust is key in this league\n"
+                "- The use of HLL log utilities is prohibited.\n"
                 "- Multiple artillery squads can be fielded but only one static gun is permitted.\n"
                 "- Artillery Observer (SL) must operate the gun and cannot move freely on the map\n"
                 "- Designated Artillery Player (DAP) & Reloader:\n"
-                "   - First player to get a kill becomes the DAP.\n"
-                "   - Each team may assign one reloader in the same artillery squad who assists the DAP.\n"
+                "   - First player to get a kill is the DAP.\n"
+                "   - Each team may assign one reloader in the same artillery squad.\n"
                 "   - Both must stay on one assigned gun; you cannot switch guns.\n"
                 "   - Both cannot leave the gun or attack enemies.\n"
                 "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
                 "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ is permitted to move it\n"
                 "- Commander artillery is prohibited\n" 
-                "- Panther tank is prohibited (banned) unless agreed by both teams for use, Tiger tank becomes prohibited (banned) as a result of this to prevent unfair axis spawn advantage\n"
-                "- Failure to comply may result in forfeiture of the match and/or points deducted\n"
-                "- Artillery Glitch, the gun becomes unloadable leaving the gun and the player stuck, to work around this happening in a game, we will permit the artillery player coming away from the gun and joining the game as another class. A clip must be submitted from the player, showing the gun won't finish loading at least 2/3 times and the scoreboard showing the game being played. We don't want the player just leaving as he/she is bored or not getting many kills.\n"
+                "- Panther tank is prohibited (banned) unless agreed by both teams for use, Tiger tank becomes prohibited (banned) to prevent unfair axis spawn advantage\n"
+                "- Artillery glitch can happen whereby rounds won't fire, gunner (and loader if used) can leave the gun and do join the game as another class provided that a clip is submitted showing the gun not loading 2-3 times.\n"
             ),
             inline=False,
         )
