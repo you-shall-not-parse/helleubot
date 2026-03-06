@@ -371,7 +371,6 @@ class EmbedManager(commands.Cog):
                 "- Hired guns are prohibited however coalition teams may be formed and fielded\n"
                 "- Players transferred between clans competing in the current season are banned from playing for their new clan until the following season\n"
                 "- Footage and consequence is subject to review by league admins if submitted as part of a protest\n"
-                "- Artillery Glitch - The gun becomes unloadable leaving the gun and the player stuck, unfortunately this Hell let loose and we expect some problems. To work around this happening in a game, we will permit the artillery player coming away from the gun and joining the game as another class. A clip must be submitted from the player, showing the gun won't finish loading at least 2/3 times and the scoreboard showing the game being played. We don't want the player just leaving as he/she is bored or not getting many kills. Commanders please make sure you have applied an artillery refill also.\n"
             ),
             inline=False,
         )
@@ -391,6 +390,7 @@ class EmbedManager(commands.Cog):
                 "- Commander artillery is prohibited\n" 
                 "- Panther tank is prohibited (banned) unless agreed by both teams for use, Tiger tank becomes prohibited (banned) as a result of this to prevent unfair axis spawn advantage\n"
                 "- Failure to comply may result in forfeiture of the match and/or points deducted\n"
+                "- Artillery Glitch, the gun becomes unloadable leaving the gun and the player stuck, to work around this happening in a game, we will permit the artillery player coming away from the gun and joining the game as another class. A clip must be submitted from the player, showing the gun won't finish loading at least 2/3 times and the scoreboard showing the game being played. We don't want the player just leaving as he/she is bored or not getting many kills.\n"
             ),
             inline=False,
         )
