@@ -828,7 +828,13 @@ class ScoreboardCog(commands.Cog):
 				message_id = self.store.data.get("leaderboard_message_id")
 				image_path = await self._render_scoreboard_image()
 				filename = os.path.basename(image_path)
-				file = discord.File(image_path, filename=filename)
+
+				def _make_file() -> discord.File:
+					# A discord.File can be consumed/closed by a send/edit attempt.
+					# Create a fresh instance each time we retry.
+					return discord.File(image_path, filename=filename)
+
+				file = _make_file()
 				embed = discord.Embed(
 					title="League Scoreboard",
 					colour=discord.Colour.blurple(),
@@ -839,8 +845,17 @@ class ScoreboardCog(commands.Cog):
 
 				try:
 					if message_id:
-						msg = await channel.fetch_message(int(message_id))
-						await msg.edit(content=content, embed=embed, attachments=[file])
+						try:
+							msg = await channel.fetch_message(int(message_id))
+							await msg.edit(content=content, embed=embed, attachments=[file])
+						except discord.NotFound:
+							# Message was deleted; clear the stored ID and re-send.
+							self.store.data["leaderboard_message_id"] = None
+							await self.store.save()
+							file = _make_file()
+							msg = await channel.send(content=content, embed=embed, file=file)
+							self.store.data["leaderboard_message_id"] = msg.id
+							await self.store.save()
 					else:
 						msg = await channel.send(content=content, embed=embed, file=file)
 						self.store.data["leaderboard_message_id"] = msg.id
