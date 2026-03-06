@@ -8,6 +8,9 @@ from datetime import date
 # Guild scope for commands / lookups
 GUILD_ID: int = 1462382487622914079
 
+# Role to ping when a fixture is marked as streamed.
+STREAMER_ROLE_ID: int = 1478166069662191627
+
 # Active clan roles (name -> role_id)
 # NOTE: BYE is not a Discord role and should not be added here.
 CLAN_ROLE_IDS: dict[str, int] = {

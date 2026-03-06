@@ -12,7 +12,7 @@ import discord
 from discord.ext import commands
 
 from data_paths import data_path
-from league_config import CLAN_ROLE_IDS, ROUND_WINDOWS
+from league_config import CLAN_ROLE_IDS, ROUND_WINDOWS, STREAMER_ROLE_ID
 
 # =============================
 # CONFIG (EDIT THIS)
@@ -235,6 +235,11 @@ class FixtureState:
 	team_size_history: list[dict[str, Any]] = field(default_factory=list)
 	agreed_team_size: Optional[int] = None
 
+	proposed_streamer: Optional[bool] = None
+	proposed_streamer_by: Optional[str] = None
+	streamer_history: list[dict[str, Any]] = field(default_factory=list)
+	agreed_streamer: Optional[bool] = None
+
 	current_map: Optional[str] = None
 	current_midpoint: Optional[str] = None
 
@@ -291,6 +296,10 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"proposed_team_size_by": s.proposed_team_size_by,
 		"team_size_history": s.team_size_history,
 		"agreed_team_size": s.agreed_team_size,
+		"proposed_streamer": s.proposed_streamer,
+		"proposed_streamer_by": s.proposed_streamer_by,
+		"streamer_history": s.streamer_history,
+		"agreed_streamer": s.agreed_streamer,
 		"current_map": s.current_map,
 		"current_midpoint": s.current_midpoint,
 		"proposed_map": s.proposed_map,
@@ -332,6 +341,10 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		proposed_team_size_by=d.get("proposed_team_size_by"),
 		team_size_history=d.get("team_size_history") or [],
 		agreed_team_size=d.get("agreed_team_size"),
+		proposed_streamer=d.get("proposed_streamer"),
+		proposed_streamer_by=d.get("proposed_streamer_by"),
+		streamer_history=d.get("streamer_history") or [],
+		agreed_streamer=d.get("agreed_streamer"),
 		current_map=d.get("current_map"),
 		current_midpoint=d.get("current_midpoint"),
 		proposed_map=d.get("proposed_map"),
@@ -375,6 +388,8 @@ def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None
 			parts.append(f"Start (UTC): {s.agreed_datetime_utc}")
 	if s.agreed_team_size:
 		parts.append(f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}")
+	if s.agreed_streamer is not None:
+		parts.append(f"Streamer: {'Yes' if s.agreed_streamer else 'No'}")
 	if ENABLE_MAP_MIDPOINT:
 		if s.current_map:
 			parts.append(f"Map: {s.current_map}")
@@ -466,6 +481,13 @@ def _history_lines(items: list[dict[str, Any]], *, kind: str, limit: int = 6) ->
 		elif kind == "size":
 			val = entry.get("size")
 			lines.append(f"- {by} {action}: {val}v{val}")
+		elif kind == "streamer":
+			val = entry.get("streamer")
+			if isinstance(val, bool):
+				val_s = "Yes" if val else "No"
+			else:
+				val_s = "?"
+			lines.append(f"- {by} {action}: {val_s}")
 		elif kind == "map":
 			m = entry.get("map")
 			mid = entry.get("mid")
@@ -504,6 +526,10 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 	# Team size (status + history)
 	size_hist = _history_lines(s.team_size_history, kind="size")
 	embed.add_field(name="Team Size", value=f"```\n{size_hist}\n```", inline=False)
+
+	# Streamer (status + history)
+	streamer_hist = _history_lines(s.streamer_history, kind="streamer")
+	embed.add_field(name="Streamer", value=f"```\n{streamer_hist}\n```", inline=False)
 
 	# Map/midpoint (status + history)
 	if ENABLE_MAP_MIDPOINT:
@@ -965,6 +991,72 @@ class FixtureThreadView(discord.ui.View):
 		await interaction.response.send_message("Team size agreed.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
+	@discord.ui.button(label="Propose streamer: Yes", style=discord.ButtonStyle.primary, custom_id="fixture:streamer_yes")
+	async def propose_streamer_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
+		res = await self._require_member(interaction)
+		if not res:
+			return
+		s, clan = res
+		if s.agreed_streamer is not None:
+			await interaction.response.send_message("Streamer setting is already locked.", ephemeral=True)
+			return
+		s.proposed_streamer = True
+		action = "proposed"
+		if s.proposed_streamer_by and s.proposed_streamer_by != clan:
+			action = "countered"
+		s.proposed_streamer_by = clan
+		s.agreed_streamer = None
+		s.streamer_history.append({"by": clan, "action": action, "streamer": True})
+		st = _load_state()
+		st["threads"][s.key] = _state_to_dict(s)
+		_save_state(st)
+		await interaction.response.send_message("Streamer proposal recorded (Yes).", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+
+	@discord.ui.button(label="Propose streamer: No", style=discord.ButtonStyle.primary, custom_id="fixture:streamer_no")
+	async def propose_streamer_no(self, interaction: discord.Interaction, button: discord.ui.Button):
+		res = await self._require_member(interaction)
+		if not res:
+			return
+		s, clan = res
+		if s.agreed_streamer is not None:
+			await interaction.response.send_message("Streamer setting is already locked.", ephemeral=True)
+			return
+		s.proposed_streamer = False
+		action = "proposed"
+		if s.proposed_streamer_by and s.proposed_streamer_by != clan:
+			action = "countered"
+		s.proposed_streamer_by = clan
+		s.agreed_streamer = None
+		s.streamer_history.append({"by": clan, "action": action, "streamer": False})
+		st = _load_state()
+		st["threads"][s.key] = _state_to_dict(s)
+		_save_state(st)
+		await interaction.response.send_message("Streamer proposal recorded (No).", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+
+	@discord.ui.button(label="Accept streamer", style=discord.ButtonStyle.success, custom_id="fixture:streamer_accept")
+	async def accept_streamer(self, interaction: discord.Interaction, button: discord.ui.Button):
+		res = await self._require_member(interaction)
+		if not res:
+			return
+		s, clan = res
+		if s.proposed_streamer is None or s.proposed_streamer_by is None:
+			await interaction.response.send_message("No streamer proposal to accept.", ephemeral=True)
+			return
+		if clan == s.proposed_streamer_by:
+			await interaction.response.send_message("The other clan must accept/counter.", ephemeral=True)
+			return
+		s.agreed_streamer = bool(s.proposed_streamer)
+		s.streamer_history.append({"by": clan, "action": "accepted", "streamer": s.agreed_streamer})
+		s.proposed_streamer = None
+		s.proposed_streamer_by = None
+		st = _load_state()
+		st["threads"][s.key] = _state_to_dict(s)
+		_save_state(st)
+		await interaction.response.send_message("Streamer setting agreed.", ephemeral=True)
+		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+
 	@discord.ui.button(label="Roll / Mix-up map+mid", style=discord.ButtonStyle.primary, custom_id="fixture:map_roll")
 	async def roll_map(self, interaction: discord.Interaction, button: discord.ui.Button):
 		if not ENABLE_MAP_MIDPOINT:
@@ -1185,9 +1277,10 @@ class FixtureThreadView(discord.ui.View):
 		end_dt = start_dt + timedelta(hours=2)
 
 		desc_lines: list[str] = [
-			f"Round: {s.round_no} ({_format_round_window(s.round_no)})",
 			f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}",
 		]
+		if s.agreed_streamer is not None:
+			desc_lines.append(f"Streamer: {'Yes' if s.agreed_streamer else 'No'}")
 		if ENABLE_MAP_MIDPOINT and s.current_map and s.current_midpoint:
 			desc_lines.append(f"Map: {s.current_map}")
 			desc_lines.append(f"Midpoint: {s.current_midpoint}")
@@ -1241,6 +1334,25 @@ class FixtureThreadView(discord.ui.View):
 			return
 
 		s.scheduled_event_id = ev.id
+
+		# If this fixture is marked as streamed, ping the streamer role in the thread.
+		if s.agreed_streamer is True and isinstance(STREAMER_ROLE_ID, int) and STREAMER_ROLE_ID > 0:
+			try:
+				thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
+				if thread is None:
+					ch = interaction.client.get_channel(s.thread_id)
+					if isinstance(ch, discord.Thread):
+						thread = ch
+					else:
+						thread = await interaction.client.fetch_channel(s.thread_id)  # type: ignore[assignment]
+				if isinstance(thread, discord.Thread):
+					await thread.send(
+						content=f"<@&{STREAMER_ROLE_ID}> Streamer requested for **{_fixture_title(s)}**: {ev.url}",
+						allowed_mentions=discord.AllowedMentions(roles=True),
+					)
+			except Exception:
+				# Ping is best-effort; even if this fails, the event is created.
+				pass
 
 		# Post/persist an agreement snapshot so later event edits don't lose what was agreed.
 		snapshot_msg_id: Optional[int] = None
@@ -1350,6 +1462,7 @@ class EventOrganiser(commands.Cog):
 			"- Click the button below to organise the fixture end-to-end.",
 			"- Propose date/time (must be within the round window)",
 			"- Propose team size (30-50, equal sizes)",
+			"- Propose streamer (yes/no)",
 		]
 		if ENABLE_MAP_MIDPOINT:
 			steps.append("- Roll map & midpoint (first roll is free, then each clan can reroll up to 3 times)")
