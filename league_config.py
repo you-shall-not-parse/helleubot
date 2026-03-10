@@ -106,9 +106,9 @@ FIXTURES_BY_ROUND: dict[int, list[tuple[str, str]]] = {
     # 8 active clans => 7 rounds (single round-robin). Each team plays each other once.
     1: [("RMC", "ZFG"), ("7DR", "48th"), ("7PD", "PG60"), ("ITHL", "CROWS")],
     2: [("RMC", "48th"), ("ZFG", "ITHL"), ("7DR", "PG60"), ("CROWS", "7PD")],
-    3: [("RMC", "7DR"), ("7PD", "ITHL"), ("PG60", "ZFG"), ("48th", "CROWS")],
-    4: [("RMC", "7PD"), ("7DR", "ZFG"), ("PG60", "CROWS"), ("ITHL", "48th")],
-    5: [("RMC", "PG60"), ("ITHL", "7DR"), ("7PD", "48th"), ("ZFG", "CROWS")],
-    6: [("RMC", "CROWS"), ("7DR", "7PD"), ("PG60", "ITHL"), ("48th", "ZFG")],
-    7: [("RMC", "ITHL"), ("7DR", "CROWS"), ("PG60", "48th"), ("7PD", "ZFG")],
+    3: [("RMC", "PG60"), ("7DR", "ITHL"), ("7PD", "48th"), ("ZFG", "CROWS")],
+    4: [("RMC", "7DR"), ("7PD", "ITHL"), ("PG60", "ZFG"), ("48th", "CROWS")],
+    5: [("RMC", "7PD"), ("7DR", "ZFG"), ("PG60", "CROWS"), ("ITHL", "48th")],
+    6: [("RMC", "ITHL"), ("7DR", "CROWS"), ("7PD", "ZFG"), ("PG60", "48th")],
+    7: [("RMC", "CROWS"), ("7DR", "7PD"), ("PG60", "ITHL"), ("48th", "ZFG")],
 }
