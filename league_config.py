@@ -80,9 +80,6 @@ ROUND_WINDOWS: dict[int, tuple[date, date]] = {
     5: (date(2026, 4, 27), date(2026, 5, 10)),
     6: (date(2026, 5, 11), date(2026, 5, 24)),
     7: (date(2026, 5, 25), date(2026, 6, 7)),
-    8: (date(2026, 6, 8), date(2026, 6, 21)),
-    9: (date(2026, 6, 22), date(2026, 7, 5)),
-
 }
 
 
@@ -105,20 +102,13 @@ def format_round_window(round_no: int) -> str:
     return f"{start_str} - {end_str}"
 
 
-# ...existing code...
-
-# Fixtures by round. Each entry is a list of (home, away) display names.
-# Use BYE_TEAM_NAME for the bye week.
 FIXTURES_BY_ROUND: dict[int, list[tuple[str, str]]] = {
-    # RDG have dropped out. Schedule is adjusted to 8 active clans by pairing
-    # the former RDG opponent with the round's BYE team.
+    # 8 active clans => 7 rounds (single round-robin). Each team plays each other once.
     1: [("RMC", "ZFG"), ("7DR", "48th"), ("7PD", "PG60"), ("ITHL", "CROWS")],
     2: [("RMC", "48th"), ("ZFG", "ITHL"), ("7DR", "PG60"), ("CROWS", "7PD")],
-    3: [("RMC", "ITHL"), ("48th", "PG60"), ("ZFG", "CROWS"), ("7PD", "7DR")],
-    4: [("RMC", "PG60"), ("ITHL", "CROWS"), ("ZFG", "7PD"), ("7DR", "48th")],
-    5: [("RMC", "CROWS"), ("ITHL", "7PD"), ("ZFG", "7DR"), ("48th", "PG60")],
-    6: [("CROWS", "7PD"), ("ITHL", "7DR"), ("48th", "ZFG"), ("PG60", "RMC")],
-    7: [("RMC", "7PD"), ("CROWS", "7DR"), ("PG60", "ZFG"), ("ITHL", "48th")],
-    8: [("7PD", "7DR"), ("CROWS", "48th"), ("PG60", "ITHL"), ("RMC", "ZFG")],
-    9: [("RMC", "7DR"), ("7PD", "48th"), ("CROWS", "PG60"), ("ZFG", "ITHL")],
+    3: [("RMC", "7DR"), ("7PD", "ITHL"), ("PG60", "ZFG"), ("48th", "CROWS")],
+    4: [("RMC", "7PD"), ("7DR", "ZFG"), ("PG60", "CROWS"), ("ITHL", "48th")],
+    5: [("RMC", "PG60"), ("ITHL", "7DR"), ("7PD", "48th"), ("ZFG", "CROWS")],
+    6: [("RMC", "CROWS"), ("7DR", "7PD"), ("PG60", "ITHL"), ("48th", "ZFG")],
+    7: [("RMC", "ITHL"), ("7DR", "CROWS"), ("PG60", "48th"), ("7PD", "ZFG")],
 }

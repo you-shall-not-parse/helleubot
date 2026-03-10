@@ -115,7 +115,10 @@ def _ordinal(n: int) -> str:
 
 
 def _format_round_window(round_no: int) -> str:
-	start, end = ROUND_WINDOWS[round_no]
+	window = ROUND_WINDOWS.get(round_no)
+	if not window:
+		return ""
+	start, end = window
 	start_str = f"{_ordinal(start.day)} {start.strftime('%B')}"
 	end_str = f"{_ordinal(end.day)} {end.strftime('%B')} {end.year}"
 	if start.year != end.year:
@@ -156,7 +159,10 @@ def _parse_datetime_utc(date_text: str, time_text: str) -> datetime:
 
 
 def _within_round(round_no: int, dt_obj: datetime) -> bool:
-	start, end = ROUND_WINDOWS[round_no]
+	window = ROUND_WINDOWS.get(round_no)
+	if not window:
+		return False
+	start, end = window
 	d = dt_obj.date()
 	return start <= d <= end
 
