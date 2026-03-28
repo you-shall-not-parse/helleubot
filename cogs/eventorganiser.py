@@ -277,6 +277,7 @@ class FixtureState:
 	server_host: Optional[str] = None
 
 	scheduled_event_id: Optional[int] = None
+	streamer_ping_message_id: Optional[int] = None
 
 	# Snapshot of what was agreed at the time of finalisation (so later event edits don't lose the original agreement)
 	agreement_snapshot_message_id: Optional[int] = None
@@ -327,6 +328,7 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"sides_decided_by": s.sides_decided_by,
 		"server_host": s.server_host,
 		"scheduled_event_id": s.scheduled_event_id,
+		"streamer_ping_message_id": s.streamer_ping_message_id,
 		"agreement_snapshot_message_id": s.agreement_snapshot_message_id,
 		"agreement_snapshot_text": s.agreement_snapshot_text,
 	}
@@ -372,9 +374,94 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		sides_decided_by=d.get("sides_decided_by"),
 		server_host=d.get("server_host"),
 		scheduled_event_id=d.get("scheduled_event_id"),
+		streamer_ping_message_id=d.get("streamer_ping_message_id"),
 		agreement_snapshot_message_id=d.get("agreement_snapshot_message_id"),
 		agreement_snapshot_text=d.get("agreement_snapshot_text"),
 	)
+
+
+async def _get_thread_channel(client: discord.Client, thread_id: int) -> Optional[discord.Thread]:
+	ch = client.get_channel(thread_id)
+	if isinstance(ch, discord.Thread):
+		return ch
+	try:
+		fetched = await client.fetch_channel(thread_id)
+		return fetched if isinstance(fetched, discord.Thread) else None
+	except Exception:
+		return None
+
+
+async def _maybe_notify_streamer(client: discord.Client, s: FixtureState, ev: discord.ScheduledEvent) -> None:
+	if s.agreed_streamer is not True:
+		return
+	if not (isinstance(STREAMER_ROLE_ID, int) and STREAMER_ROLE_ID > 0):
+		return
+	if s.streamer_ping_message_id:
+		return
+	thread = await _get_thread_channel(client, s.thread_id)
+	if thread is None:
+		return
+	try:
+		msg = await thread.send(
+			content=f"<@&{STREAMER_ROLE_ID}> Streamer requested for **{_fixture_title(s)}**: {ev.url}",
+			allowed_mentions=discord.AllowedMentions(roles=True),
+		)
+		s.streamer_ping_message_id = msg.id
+	except Exception:
+		return
+
+
+async def _maybe_post_agreement_snapshot(client: discord.Client, s: FixtureState, ev: discord.ScheduledEvent) -> None:
+	# Only snapshot when the fixture is effectively "final" for the info users care about.
+	if s.agreement_snapshot_message_id:
+		return
+	if ENABLE_SIDES and not _sides_server_agreed(s):
+		return
+	thread = await _get_thread_channel(client, s.thread_id)
+	if thread is None:
+		return
+	try:
+		snapshot_text = _agreement_snapshot_text(s, event_url=ev.url)
+		msg = await thread.send(snapshot_text)
+		s.agreement_snapshot_message_id = msg.id
+		s.agreement_snapshot_text = snapshot_text
+	except Exception:
+		return
+
+
+async def _auto_sync_event(client: discord.Client, guild: Optional[discord.Guild], thread_id: int) -> None:
+	"""Background task: create/update the scheduled event when state changes."""
+	if guild is None:
+		return
+	state = _load_state()
+	raw = state.get("threads", {}).get(str(thread_id))
+	if not isinstance(raw, dict):
+		return
+	s = _dict_to_state(raw)
+
+	if guild.id != SCHEDULED_EVENT_GUILD_ID:
+		return
+
+	# Create event when core details are agreed; later append sides/server and flip emoji.
+	before_event_id = s.scheduled_event_id
+	ev = await _create_or_update_scheduled_event(
+		client,
+		guild=guild,
+		s=s,
+		create_if_missing=True,
+		append_sides_if_ready=True,
+	)
+	if ev is None:
+		return
+
+	# Best-effort notifications.
+	if before_event_id is None and s.scheduled_event_id is not None:
+		await _maybe_notify_streamer(client, s, ev)
+	await _maybe_post_agreement_snapshot(client, s, ev)
+
+	state["threads"][s.key] = _state_to_dict(s)
+	_save_state(state)
+	asyncio.create_task(_refresh_thread(client, s.thread_id))
 
 
 def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None) -> str:
@@ -511,6 +598,189 @@ def _history_lines(items: list[dict[str, Any]], *, kind: str, limit: int = 6) ->
 
 def _fixture_title(s: FixtureState) -> str:
 	return f"Round {s.round_no}: {s.clan_a} vs {s.clan_b}"
+
+
+_EVENT_TITLE_PENDING_EMOJI = "❗"
+_EVENT_TITLE_COMPLETE_EMOJI = "✅"
+_EVENT_SIDES_SECTION_HEADER = "Sides/Server:"
+
+
+def _sides_server_agreed(s: FixtureState) -> bool:
+	if not ENABLE_SIDES:
+		return True
+	return bool(s.sides_allies and s.sides_axis and s.server_host)
+
+
+def _with_status_emoji(title: str, *, sides_agreed: bool) -> str:
+	"""Ensure the event title has the correct status emoji.
+
+	- If sides/server not agreed: prefix with ❗
+	- If sides/server agreed: prefix with ✅
+
+	If the title already starts with either emoji, it will be replaced.
+	"""
+	base = str(title or "").lstrip()
+	for prefix in (
+		f"{_EVENT_TITLE_PENDING_EMOJI} ",
+		f"{_EVENT_TITLE_COMPLETE_EMOJI} ",
+		_EVENT_TITLE_PENDING_EMOJI,
+		_EVENT_TITLE_COMPLETE_EMOJI,
+	):
+		if base.startswith(prefix):
+			base = base[len(prefix):].lstrip()
+			break
+	status = _EVENT_TITLE_COMPLETE_EMOJI if sides_agreed else _EVENT_TITLE_PENDING_EMOJI
+	return f"{status} {base}" if base else status
+
+
+def _initial_event_description(s: FixtureState) -> str:
+	lines: list[str] = []
+	if s.agreed_team_size:
+		lines.append(f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}")
+	if s.agreed_streamer is not None:
+		lines.append(f"Streamer: {'Yes' if s.agreed_streamer else 'No'}")
+	if ENABLE_MAP_MIDPOINT and s.current_map and s.current_midpoint:
+		lines.append(f"Map: {s.current_map}")
+		lines.append(f"Midpoint: {s.current_midpoint}")
+	lines.append(f"Thread: <#{s.thread_id}>")
+	return "\n".join(lines).strip()
+
+
+def _append_sides_server_section(description: Optional[str], s: FixtureState) -> str:
+	"""Append sides/server text at the end without overwriting existing content.
+
+	If the section is already present, returns the original description unchanged.
+	"""
+	current = (description or "").rstrip()
+	if not _sides_server_agreed(s):
+		return current
+	if _EVENT_SIDES_SECTION_HEADER in current:
+		return current
+	section_lines = [
+		_EVENT_SIDES_SECTION_HEADER,
+		f"Allies: {s.sides_allies}",
+		f"Axis: {s.sides_axis}",
+		f"Server host: {s.server_host} Server",
+	]
+	section = "\n".join(section_lines)
+	if not current:
+		return section
+	return current + "\n\n" + section
+
+
+async def _fetch_scheduled_event(guild: discord.Guild, event_id: int) -> Optional[discord.ScheduledEvent]:
+	try:
+		return await guild.fetch_scheduled_event(event_id)
+	except Exception:
+		return None
+
+
+async def _create_or_update_scheduled_event(
+	client: discord.Client,
+	*,
+	guild: discord.Guild,
+	s: FixtureState,
+	create_if_missing: bool,
+	append_sides_if_ready: bool,
+) -> Optional[discord.ScheduledEvent]:
+	"""Create the scheduled event once core details are agreed, then update later.
+
+	Rules:
+	- Create when datetime+team size+streamer are agreed.
+	- If sides/server are not agreed, prefix title with ❗.
+	- When sides/server become agreed, prefix title with ✅ and append sides/server at bottom.
+	- Never overwrite existing event description content.
+	"""
+	if guild.id != SCHEDULED_EVENT_GUILD_ID:
+		return None
+	if not (s.agreed_datetime_utc and s.agreed_team_size and s.agreed_streamer is not None):
+		return None
+
+	start_dt = datetime.fromisoformat(s.agreed_datetime_utc)
+	if start_dt.tzinfo is None:
+		start_dt = start_dt.replace(tzinfo=timezone.utc)
+	start_dt = start_dt.astimezone(timezone.utc)
+	end_dt = start_dt + timedelta(hours=2)
+
+	sides_ready = _sides_server_agreed(s)
+
+	# Load existing event if present.
+	ev: Optional[discord.ScheduledEvent] = None
+	if s.scheduled_event_id:
+		ev = await _fetch_scheduled_event(guild, int(s.scheduled_event_id))
+
+	# Create if missing.
+	if ev is None and not s.scheduled_event_id and create_if_missing:
+		location = f"{s.server_host} Server" if (ENABLE_SIDES and s.server_host) else EVENT_LOCATION_FALLBACK
+		desc = _initial_event_description(s)
+		if append_sides_if_ready and sides_ready:
+			desc = _append_sides_server_section(desc, s)
+		name = _with_status_emoji(_fixture_title(s), sides_agreed=sides_ready)
+		try:
+			if SCHEDULED_EVENT_CHANNEL_ID:
+				channel = guild.get_channel(SCHEDULED_EVENT_CHANNEL_ID)
+				if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+					return None
+				ev = await guild.create_scheduled_event(
+					name=name,
+					start_time=start_dt,
+					end_time=end_dt,
+					privacy_level=discord.PrivacyLevel.guild_only,
+					entity_type=(
+						discord.EntityType.stage_instance
+						if isinstance(channel, discord.StageChannel)
+						else discord.EntityType.voice
+					),
+					channel=channel,
+					description=desc,
+				)
+			else:
+				ev = await guild.create_scheduled_event(
+					name=name,
+					start_time=start_dt,
+					end_time=end_dt,
+					privacy_level=discord.PrivacyLevel.guild_only,
+					entity_type=discord.EntityType.external,
+					location=location,
+					description=desc,
+				)
+		except Exception:
+			return None
+		s.scheduled_event_id = ev.id
+
+	if ev is None:
+		return None
+
+	# Update title emoji always; append sides/server only when ready.
+	new_name = _with_status_emoji(ev.name or _fixture_title(s), sides_agreed=sides_ready)
+	new_desc: Optional[str] = None
+	if append_sides_if_ready and sides_ready:
+		new_desc = _append_sides_server_section(ev.description, s)
+	new_location: Optional[str] = None
+	if append_sides_if_ready and sides_ready and ev.entity_type == discord.EntityType.external:
+		new_location = f"{s.server_host} Server" if s.server_host else EVENT_LOCATION_FALLBACK
+
+	# Only call edit if something actually changes.
+	edit_kwargs: dict[str, Any] = {}
+	if new_name != (ev.name or ""):
+		edit_kwargs["name"] = new_name
+	if new_desc is not None and new_desc != (ev.description or ""):
+		edit_kwargs["description"] = new_desc
+	if new_location is not None and new_location != (ev.location or ""):
+		edit_kwargs["location"] = new_location
+
+	if edit_kwargs:
+		try:
+			await ev.edit(**edit_kwargs)
+			# Re-fetch to reflect edits in returned object.
+			if s.scheduled_event_id:
+				ev2 = await _fetch_scheduled_event(guild, int(s.scheduled_event_id))
+				if ev2 is not None:
+					ev = ev2
+		except Exception:
+			pass
+
+	return ev
 
 
 def _fixture_embed(s: FixtureState) -> discord.Embed:
@@ -963,6 +1233,7 @@ class FixtureThreadView(discord.ui.View):
 		_save_state(st)
 		await interaction.response.send_message("Date/time agreed.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+		asyncio.create_task(_auto_sync_event(interaction.client, interaction.guild, s.thread_id))
 
 	@discord.ui.button(label="Propose team size", style=discord.ButtonStyle.primary, custom_id="fixture:size_propose")
 	async def propose_size(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -996,6 +1267,7 @@ class FixtureThreadView(discord.ui.View):
 		_save_state(st)
 		await interaction.response.send_message("Team size agreed.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+		asyncio.create_task(_auto_sync_event(interaction.client, interaction.guild, s.thread_id))
 
 	@discord.ui.button(label="Propose streamer: Yes", style=discord.ButtonStyle.primary, custom_id="fixture:streamer_yes")
 	async def propose_streamer_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1062,6 +1334,7 @@ class FixtureThreadView(discord.ui.View):
 		_save_state(st)
 		await interaction.response.send_message("Streamer setting agreed.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+		asyncio.create_task(_auto_sync_event(interaction.client, interaction.guild, s.thread_id))
 
 	@discord.ui.button(label="Roll / Mix-up map+mid", style=discord.ButtonStyle.primary, custom_id="fixture:map_roll")
 	async def roll_map(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1072,9 +1345,6 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, clan = res
-		if s.scheduled_event_id:
-			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
-			return
 		if s.current_map and s.current_midpoint:
 			await interaction.response.send_message("Map/midpoint is already locked.", ephemeral=True)
 			return
@@ -1130,9 +1400,6 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, clan = res
-		if s.scheduled_event_id:
-			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
-			return
 		if s.current_map and s.current_midpoint:
 			await interaction.response.send_message("Map/midpoint is already locked.", ephemeral=True)
 			return
@@ -1163,9 +1430,6 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, clan = res
-		if s.scheduled_event_id:
-			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
-			return
 		if s.sides_allies or s.sides_axis:
 			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
 			return
@@ -1213,9 +1477,6 @@ class FixtureThreadView(discord.ui.View):
 		if not res:
 			return
 		s, clan = res
-		if s.scheduled_event_id:
-			await interaction.response.send_message("Event already created; fixture is locked.", ephemeral=True)
-			return
 		if s.sides_allies or s.sides_axis:
 			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
 			return
@@ -1239,6 +1500,7 @@ class FixtureThreadView(discord.ui.View):
 		_save_state(st)
 		await interaction.response.send_message("Sides locked.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+		asyncio.create_task(_auto_sync_event(interaction.client, interaction.guild, s.thread_id))
 
 	@discord.ui.button(label="Create Discord Event", style=discord.ButtonStyle.success, custom_id="fixture:event")
 	async def create_event(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1247,25 +1509,16 @@ class FixtureThreadView(discord.ui.View):
 			return
 		s, _ = res
 
-		# Event creation + snapshot posting can take longer than 3 seconds.
+		# Event creation/update can take longer than 3 seconds.
 		await interaction.response.defer(ephemeral=True, thinking=True)
-		if s.scheduled_event_id:
-			await interaction.followup.send("Event already created.", ephemeral=True)
-			return
 		if not s.agreed_datetime_utc:
 			await interaction.followup.send("Agree the date/time first.", ephemeral=True)
 			return
 		if not s.agreed_team_size:
 			await interaction.followup.send("Agree the team size first.", ephemeral=True)
 			return
-		if ENABLE_MAP_MIDPOINT and not (s.current_map and s.current_midpoint):
-			await interaction.followup.send("Roll map/midpoint first.", ephemeral=True)
-			return
-		if ENABLE_SIDES and not (s.sides_allies and s.sides_axis):
-			await interaction.followup.send("Decide sides first.", ephemeral=True)
-			return
-		if ENABLE_SIDES and not s.server_host:
-			await interaction.followup.send("Select sides first (server host is chosen with the coin flip).", ephemeral=True)
+		if s.agreed_streamer is None:
+			await interaction.followup.send("Agree the streamer setting first.", ephemeral=True)
 			return
 		if interaction.guild is None:
 			await interaction.followup.send("Server only.", ephemeral=True)
@@ -1276,116 +1529,26 @@ class FixtureThreadView(discord.ui.View):
 			await interaction.followup.send("This interaction is in the wrong guild for event creation.", ephemeral=True)
 			return
 
-		start_dt = datetime.fromisoformat(s.agreed_datetime_utc)
-		if start_dt.tzinfo is None:
-			start_dt = start_dt.replace(tzinfo=timezone.utc)
-		start_dt = start_dt.astimezone(timezone.utc)
-		end_dt = start_dt + timedelta(hours=2)
-
-		desc_lines: list[str] = [
-			f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}",
-		]
-		if s.agreed_streamer is not None:
-			desc_lines.append(f"Streamer: {'Yes' if s.agreed_streamer else 'No'}")
-		if ENABLE_MAP_MIDPOINT and s.current_map and s.current_midpoint:
-			desc_lines.append(f"Map: {s.current_map}")
-			desc_lines.append(f"Midpoint: {s.current_midpoint}")
-		if ENABLE_SIDES and s.sides_allies and s.sides_axis:
-			desc_lines.append(f"Allies: {s.sides_allies}")
-			desc_lines.append(f"Axis: {s.sides_axis}")
-		desc_lines.append(f"Thread: <#{s.thread_id}>")
-		desc = "\n".join(desc_lines)
-
-		location = f"{s.server_host} Server" if s.server_host else EVENT_LOCATION_FALLBACK
-
-		try:
-			if SCHEDULED_EVENT_CHANNEL_ID:
-				channel = guild.get_channel(SCHEDULED_EVENT_CHANNEL_ID)
-				if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
-					await interaction.followup.send("Configured event channel is invalid.", ephemeral=True)
-					return
-				# Voice/stage events don't have a location field, so include host in the description.
-				ev = await guild.create_scheduled_event(
-					name=_fixture_title(s),
-					start_time=start_dt,
-					end_time=end_dt,
-					privacy_level=discord.PrivacyLevel.guild_only,
-					entity_type=(
-						discord.EntityType.stage_instance
-						if isinstance(channel, discord.StageChannel)
-						else discord.EntityType.voice
-					),
-					channel=channel,
-					description=(
-						f"{desc}\n**Server host:** {location}"
-						if location
-						else desc
-					),
-				)
-			else:
-				ev = await guild.create_scheduled_event(
-					name=_fixture_title(s),
-					start_time=start_dt,
-					end_time=end_dt,
-					privacy_level=discord.PrivacyLevel.guild_only,
-					entity_type=discord.EntityType.external,
-					location=location,
-					description=desc,
-				)
-		except discord.Forbidden:
-			await interaction.followup.send("Missing permissions to create scheduled events.", ephemeral=True)
-			return
-		except Exception as e:
-			await interaction.followup.send(f"Failed to create event: {e}", ephemeral=True)
+		ev = await _create_or_update_scheduled_event(
+			interaction.client,
+			guild=guild,
+			s=s,
+			create_if_missing=True,
+			append_sides_if_ready=True,
+		)
+		if ev is None:
+			await interaction.followup.send("Failed to create/update the event (check permissions/config).", ephemeral=True)
 			return
 
-		s.scheduled_event_id = ev.id
-
-		# If this fixture is marked as streamed, ping the streamer role in the thread.
-		if s.agreed_streamer is True and isinstance(STREAMER_ROLE_ID, int) and STREAMER_ROLE_ID > 0:
-			try:
-				thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
-				if thread is None:
-					ch = interaction.client.get_channel(s.thread_id)
-					if isinstance(ch, discord.Thread):
-						thread = ch
-					else:
-						thread = await interaction.client.fetch_channel(s.thread_id)  # type: ignore[assignment]
-				if isinstance(thread, discord.Thread):
-					await thread.send(
-						content=f"<@&{STREAMER_ROLE_ID}> Streamer requested for **{_fixture_title(s)}**: {ev.url}",
-						allowed_mentions=discord.AllowedMentions(roles=True),
-					)
-			except Exception:
-				# Ping is best-effort; even if this fails, the event is created.
-				pass
-
-		# Post/persist an agreement snapshot so later event edits don't lose what was agreed.
-		snapshot_msg_id: Optional[int] = None
-		if not s.agreement_snapshot_message_id:
-			try:
-				thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
-				if thread is None:
-					ch = interaction.client.get_channel(s.thread_id)
-					if isinstance(ch, discord.Thread):
-						thread = ch
-					else:
-						thread = await interaction.client.fetch_channel(s.thread_id)  # type: ignore[assignment]
-				if isinstance(thread, discord.Thread):
-					snapshot_text = _agreement_snapshot_text(s, event_url=ev.url)
-					msg = await thread.send(snapshot_text)
-					snapshot_msg_id = msg.id
-					s.agreement_snapshot_message_id = snapshot_msg_id
-					s.agreement_snapshot_text = snapshot_text
-			except Exception:
-				# Snapshot is best-effort; even if this fails, the event is created.
-				pass
+		# Best-effort: ping streamer role and/or post snapshot when appropriate.
+		await _maybe_notify_streamer(interaction.client, s, ev)
+		await _maybe_post_agreement_snapshot(interaction.client, s, ev)
 
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
-		await interaction.followup.send(f"Event created: {ev.url}", ephemeral=True)
+		await interaction.followup.send(f"Event synced: {ev.url}", ephemeral=True)
 
 
 async def _refresh_thread(client: discord.Client, thread_id: int) -> None:
@@ -1474,7 +1637,9 @@ class EventOrganiser(commands.Cog):
 			steps.append("- Roll map & midpoint (first roll is free, then each clan can reroll up to 3 times)")
 		if ENABLE_SIDES:
 			steps.append("- Decide sides and host server with a random chance!")
-		steps.append("- Create the Discord event when done!")
+		steps.append("- The Discord event auto-creates after date/time, team size, and streamer are agreed")
+		if ENABLE_SIDES:
+			steps.append("- Once sides/server are agreed they are appended to the event (❗ → ✅)")
 
 		embed = discord.Embed(
 			title="Fixture Organiser",
