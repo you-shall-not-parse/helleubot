@@ -418,6 +418,74 @@ class StreamerCalendar(commands.Cog):
 			if isinstance(cal, discord.TextChannel) and cal.guild is not None:
 				await _refresh_streamer_board(self.bot, cal.guild, cal)
 
+	@commands.Cog.listener()
+	async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+		# If a streamer request message is deleted, remove it from JSON.
+		if not (isinstance(STREAMER_REQUESTS_CHANNEL_ID, int) and STREAMER_REQUESTS_CHANNEL_ID > 0):
+			return
+		if payload.channel_id != STREAMER_REQUESTS_CHANNEL_ID:
+			return
+		state = _load_streamer_state()
+		hit = _find_request_by_message_id(state, int(payload.message_id))
+		if hit is None:
+			return
+		rid, _ = hit
+		requests = state.get("requests", {})
+		if isinstance(requests, dict) and rid in requests:
+			try:
+				del requests[rid]
+			except Exception:
+				return
+			state["requests"] = requests
+			_save_streamer_state(state)
+
+		# Refresh the calendar board (best-effort).
+		if not (isinstance(STREAMER_CALENDAR_CHANNEL_ID, int) and STREAMER_CALENDAR_CHANNEL_ID > 0):
+			return
+		guild = self.bot.get_guild(payload.guild_id) if payload.guild_id else None
+		if guild is None:
+			return
+		cal = guild.get_channel(STREAMER_CALENDAR_CHANNEL_ID)
+		if isinstance(cal, discord.TextChannel):
+			await _refresh_streamer_board(self.bot, guild, cal)
+
+	@commands.Cog.listener()
+	async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
+		# Bulk delete variant (e.g., mod purge).
+		if not (isinstance(STREAMER_REQUESTS_CHANNEL_ID, int) and STREAMER_REQUESTS_CHANNEL_ID > 0):
+			return
+		if payload.channel_id != STREAMER_REQUESTS_CHANNEL_ID:
+			return
+		state = _load_streamer_state()
+		requests = state.get("requests", {})
+		if not isinstance(requests, dict):
+			return
+		removed = False
+		for mid in payload.message_ids:
+			hit = _find_request_by_message_id(state, int(mid))
+			if hit is None:
+				continue
+			rid, _ = hit
+			if rid in requests:
+				try:
+					del requests[rid]
+				except Exception:
+					continue
+				removed = True
+		if not removed:
+			return
+		state["requests"] = requests
+		_save_streamer_state(state)
+
+		if not (isinstance(STREAMER_CALENDAR_CHANNEL_ID, int) and STREAMER_CALENDAR_CHANNEL_ID > 0):
+			return
+		guild = self.bot.get_guild(payload.guild_id) if payload.guild_id else None
+		if guild is None:
+			return
+		cal = guild.get_channel(STREAMER_CALENDAR_CHANNEL_ID)
+		if isinstance(cal, discord.TextChannel):
+			await _refresh_streamer_board(self.bot, guild, cal)
+
 
 async def setup(bot: commands.Bot):
 	await bot.add_cog(StreamerCalendar(bot))
