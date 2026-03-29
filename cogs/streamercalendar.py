@@ -16,7 +16,7 @@ from league_config import STREAMER_ROLE_ID
 
 # Channel where streamer requests are posted + managed.
 # Set to the text channel ID where you want the streamer request board to live.
-STREAMER_REQUEST_CHANNEL_ID = 0
+STREAMER_REQUEST_CHANNEL_ID = 1484581158124519454
 
 # Where we persist streamer request board state
 STREAMER_STATE_PATH = data_path("streamer_requests_state.json")
