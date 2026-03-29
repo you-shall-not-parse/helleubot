@@ -955,8 +955,9 @@ class ScoreboardCog(commands.Cog):
 
 			# Score centered, clans anchored left/right so they don't crowd the numbers.
 			max_score_w = int((w - 2 * margin) * 0.45)
-			score_font = _fit_font(score_text, max_score_w, start_size=_clamp(int(h * 0.075), 30, 120), min_size=20)
-			clan_font = _fit_font(a_name if len(a_name) >= len(b_name) else b_name, int((w - 2 * margin) * 0.35), start_size=_clamp(int(h * 0.070), 28, 110), min_size=18)
+			# Slightly smaller than before so long names/scores have more breathing room.
+			score_font = _fit_font(score_text, max_score_w, start_size=_clamp(int(h * 0.070), 28, 110), min_size=18)
+			clan_font = _fit_font(a_name if len(a_name) >= len(b_name) else b_name, int((w - 2 * margin) * 0.35), start_size=_clamp(int(h * 0.066), 26, 100), min_size=16)
 
 			left_x = margin + int(w * 0.08)
 			right_x = w - margin - int(w * 0.08)
@@ -966,7 +967,7 @@ class ScoreboardCog(commands.Cog):
 		else:
 			result_text = "NO RESULTS YET"
 			max_result_w = (w - 2 * margin) - 40
-			result_font = _fit_font(result_text, max_result_w, start_size=_clamp(int(h * 0.075), 30, 120), min_size=20)
+			result_font = _fit_font(result_text, max_result_w, start_size=_clamp(int(h * 0.070), 28, 110), min_size=18)
 			draw.text((w // 2, center_y), result_text, font=result_font, fill=text_fill, anchor="mm")
 
 		# Leaderboard table (auto-fit all teams)
@@ -983,14 +984,15 @@ class ScoreboardCog(commands.Cog):
 		col_idx = margin + int(w * 0.02)
 		col_name = margin + int(w * 0.12)
 		# Evenly space numeric columns in a fixed right-side band
-		# Widen the numeric band so Score / W / L have more breathing room.
+		# Widen the numeric band so Score / W / L / MP have more breathing room.
 		# (This also nudges Score a bit further left.)
 		numeric_right = w - margin - int(w * 0.07)
-		numeric_left = w - margin - int(w * 0.54)
-		segment = max(1, (numeric_right - numeric_left) / 3)
+		numeric_left = w - margin - int(w * 0.58)
+		segment = max(1, (numeric_right - numeric_left) / 4)
 		col_score = int(numeric_left + segment * 0.5)
 		col_w = int(numeric_left + segment * 1.5)
 		col_l = int(numeric_left + segment * 2.5)
+		col_mp = int(numeric_left + segment * 3.5)
 
 		header_y = usable_top
 		# Use anchors so columns align consistently
@@ -999,6 +1001,7 @@ class ScoreboardCog(commands.Cog):
 		draw.text((col_score, header_y), "SCORE", font=header_font, fill=text_fill, anchor="ma")
 		draw.text((col_w, header_y), "W", font=header_font, fill=text_fill, anchor="ma")
 		draw.text((col_l, header_y), "L", font=header_font, fill=text_fill, anchor="ma")
+		draw.text((col_mp, header_y), "MP", font=header_font, fill=text_fill, anchor="ma")
 
 		for i, r in enumerate(rows, start=1):
 			y = header_y + row_h * i
@@ -1013,6 +1016,8 @@ class ScoreboardCog(commands.Cog):
 			draw.text((col_score, y), str(int(r["score"])), font=row_font, fill=text_fill, anchor="ma")
 			draw.text((col_w, y), str(int(r["w"])), font=row_font, fill=text_fill, anchor="ma")
 			draw.text((col_l, y), str(int(r["l"])), font=row_font, fill=text_fill, anchor="ma")
+			played = int(r.get("w", 0)) + int(r.get("l", 0))
+			draw.text((col_mp, y), str(played), font=row_font, fill=text_fill, anchor="ma")
 
 		out_path = data_path("scoreboard_rendered.png")
 		base.save(out_path, format="PNG")
