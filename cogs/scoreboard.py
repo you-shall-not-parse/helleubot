@@ -1317,6 +1317,25 @@ class ScoreboardCog(commands.Cog):
 		await interaction.followup.send("Scoreboard + leaderboard repaired.", ephemeral=True)
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
+	@app_commands.command(
+		name="scoreboard_leaderboard_repost",
+		description="Admin: repost the leaderboard image (posts a new message; does not delete the old one)",
+	)
+	@app_commands.check(_admin_app_command_check)
+	async def scoreboard_leaderboard_repost(self, interaction: discord.Interaction):
+		await interaction.response.defer(ephemeral=True)
+		# Clear stored message id so the next update sends a fresh message.
+		self.store.data["leaderboard_message_id"] = None
+		await self.store.save()
+
+		# Best-effort: bypass the local cooldown so admins can repost immediately.
+		self._last_leaderboard_update_ts = 0.0
+		self._leaderboard_rate_limited_until_ts = 0.0
+
+		await self.ensure_leaderboard_message()
+		await interaction.followup.send("Queued a fresh leaderboard repost (new message).", ephemeral=True)
+
+	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.command(name="scoreboard_admin_reset", description="Admin: reset leaderboard and clear latest result")
 	@app_commands.check(_admin_app_command_check)
 	async def scoreboard_admin_reset(self, interaction: discord.Interaction):
