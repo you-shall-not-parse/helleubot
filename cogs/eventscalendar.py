@@ -199,7 +199,7 @@ class EventDisplayCog(commands.Cog):
         # No URLs in the starter text to avoid link embeds.
         starter_text = (
             f"📅 New event created: **{title}**\n"
-            f"**Date/Time:** {start_time_str}\n"
+            f"**Date/Time (UTC):** {start_time_str}\n"
             f"**Organiser:** {organiser}"
         )
 
@@ -516,7 +516,7 @@ class EventDisplayCog(commands.Cog):
 
                 # Build the field value
                 field_value = (
-                    f"**Date/Time:** {start_time_str}"
+                    f"**Date/Time (UTC):** {start_time_str}"
                     f"\n**Organiser:** {organiser_str}"
                     f"{location_str}"
                 )
