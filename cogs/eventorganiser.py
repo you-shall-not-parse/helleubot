@@ -11,6 +11,8 @@ from typing import Any, Optional
 import discord
 from discord.ext import commands
 
+from cogs.streamercalendar import maybe_post_streamer_request
+
 from data_paths import data_path
 from league_config import CLAN_ROLE_IDS, ROUND_WINDOWS, STREAMER_ROLE_ID
 
@@ -80,6 +82,7 @@ REROLL_LIMIT = 3
 
 # Where we persist state
 STATE_PATH = data_path("fixture_organiser_state.json")
+
 
 
 # =============================
@@ -391,22 +394,30 @@ async def _get_thread_channel(client: discord.Client, thread_id: int) -> Optiona
 		return None
 
 
-async def _maybe_notify_streamer(client: discord.Client, s: FixtureState, ev: discord.ScheduledEvent) -> None:
+
+
+async def _maybe_notify_streamer(
+	client: discord.Client,
+	s: FixtureState,
+	ev: discord.ScheduledEvent,
+	*,
+	guild: Optional[discord.Guild] = None,
+) -> None:
 	if s.agreed_streamer is not True:
 		return
-	if not (isinstance(STREAMER_ROLE_ID, int) and STREAMER_ROLE_ID > 0):
-		return
-	if s.streamer_ping_message_id:
-		return
-	thread = await _get_thread_channel(client, s.thread_id)
-	if thread is None:
+	if guild is None:
 		return
 	try:
-		msg = await thread.send(
-			content=f"<@&{STREAMER_ROLE_ID}> Streamer requested for **{_fixture_title(s)}**: {ev.url}",
-			allowed_mentions=discord.AllowedMentions(roles=True),
+		await maybe_post_streamer_request(
+			client,
+			guild=guild,
+			thread_id=s.thread_id,
+			clan_a=s.clan_a,
+			clan_b=s.clan_b,
+			datetime_utc_iso=s.agreed_datetime_utc,
+			event_id=int(getattr(ev, "id", 0) or 0),
+			event_url=str(getattr(ev, "url", "")),
 		)
-		s.streamer_ping_message_id = msg.id
 	except Exception:
 		return
 
@@ -456,7 +467,7 @@ async def _auto_sync_event(client: discord.Client, guild: Optional[discord.Guild
 
 	# Best-effort notifications.
 	if before_event_id is None and s.scheduled_event_id is not None:
-		await _maybe_notify_streamer(client, s, ev)
+		await _maybe_notify_streamer(client, s, ev, guild=guild)
 	await _maybe_post_agreement_snapshot(client, s, ev)
 
 	state["threads"][s.key] = _state_to_dict(s)
@@ -1541,7 +1552,7 @@ class FixtureThreadView(discord.ui.View):
 			return
 
 		# Best-effort: ping streamer role and/or post snapshot when appropriate.
-		await _maybe_notify_streamer(interaction.client, s, ev)
+		await _maybe_notify_streamer(interaction.client, s, ev, guild=interaction.guild)
 		await _maybe_post_agreement_snapshot(interaction.client, s, ev)
 
 		st = _load_state()

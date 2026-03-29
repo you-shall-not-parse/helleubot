@@ -79,6 +79,7 @@ async def main():
         await bot.load_extension("cogs.EmbedManager")
         await bot.load_extension("cogs.eventscalendar")
         await bot.load_extension("cogs.eventorganiser")
+        await bot.load_extension("cogs.streamercalendar")
         await bot.load_extension("cogs.scoreboard")
         await bot.start(TOKEN)
 
