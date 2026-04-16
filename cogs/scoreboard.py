@@ -702,6 +702,35 @@ class ScoreboardCog(commands.Cog):
 			eta = max(eta, self._leaderboard_rate_limited_until_ts - now)
 		return max(0.0, float(eta))
 
+	async def _sync_guild_commands_with_retry(self, *, max_attempts: int = 4, base_delay: float = 5.0) -> None:
+		"""Try to sync guild commands with a small retry/backoff for transient Discord errors.
+		Logs warnings on transient failures instead of full exception traces.
+		"""
+		for attempt in range(1, max_attempts + 1):
+			try:
+				await self.bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+				self._did_guild_sync = True
+				log.info("Synced scoreboard commands to guild %s", GUILD_ID)
+				return
+			except discord.HTTPException as e:
+				# Likely a transient API or network issue (503s etc.). Warn and retry.
+				log.warning(
+					"Transient error syncing scoreboard commands to guild %s (attempt %d/%d): %s",
+					GUILD_ID,
+					attempt,
+					max_attempts,
+					str(e),
+				)
+				# exponential backoff
+				delay = base_delay * (2 ** (attempt - 1))
+				await asyncio.sleep(delay)
+			except Exception:
+				# Unexpected errors should be visible in logs for debugging.
+				log.exception("Unexpected error while syncing scoreboard commands to guild %s", GUILD_ID)
+				return
+		# If we exhausted attempts, leave _did_guild_sync False so future on_ready may retry.
+		log.warning("Giving up syncing scoreboard commands to guild %s after %d attempts", GUILD_ID, max_attempts)
+
 	async def cog_load(self) -> None:
 		await self.store.load()
 		await self.store.ensure_clans()
@@ -721,13 +750,7 @@ class ScoreboardCog(commands.Cog):
 	async def on_ready(self):
 		# Guild-scoped slash command sync (instant availability in this guild).
 		if not self._did_guild_sync and GUILD_ID:
-			try:
-				await self.bot.tree.sync(guild=discord.Object(id=GUILD_ID))
-				self._did_guild_sync = True
-			except Exception:
-				log.exception("Failed syncing scoreboard commands to guild %s", GUILD_ID)
-				# Don't flip the flag; we'll retry next on_ready.
-				return
+			await self._sync_guild_commands_with_retry()
 
 		# on_ready can fire multiple times (reconnects). Only do the auto-repair once
 		# per process start to avoid accidental re-posting.

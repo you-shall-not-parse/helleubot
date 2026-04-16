@@ -765,6 +765,11 @@ class StreamerCalendar(commands.Cog):
 	@app_commands.describe(
 		request_message_link="Discord message link for the streamer request message",
 		accepted_streamer="Optional streamer to mark as accepted on this request",
+		thread_id="Optional numeric thread id to associate when the message has no embed",
+		clan_a="Optional clan A name when the message has no embed",
+		clan_b="Optional clan B name when the message has no embed",
+		when="Optional display datetime like '16/04/2026 23:00' or '16/04/2026 23:00 UTC'",
+		event_url="Optional event URL to link to the scheduled event",
 	)
 	@app_commands.checks.has_permissions(administrator=True)
 	async def streamer_calendar_add_request(
@@ -772,6 +777,11 @@ class StreamerCalendar(commands.Cog):
 		interaction: discord.Interaction,
 		request_message_link: str,
 		accepted_streamer: Optional[discord.Member] = None,
+		thread_id: Optional[int] = None,
+		clan_a: Optional[str] = None,
+		clan_b: Optional[str] = None,
+		when: Optional[str] = None,
+		event_url: Optional[str] = None,
 	):
 		await interaction.response.defer(ephemeral=True)
 		if interaction.guild is None:
@@ -800,18 +810,79 @@ class StreamerCalendar(commands.Cog):
 		except Exception:
 			await interaction.followup.send("I could not fetch that request message.", ephemeral=True)
 			return
+		# Try to parse an existing embed and repair state if present.
 		entry = await _repair_streamer_request_from_message(
 			self.bot,
 			guild=interaction.guild,
 			request_message=request_message,
 			accepted_streamer=accepted_streamer,
 		)
+
 		if entry is None:
+			# If there's no embed, allow manual creation when admin supplies thread_id, clan_a and clan_b.
+			if not (thread_id and clan_a and clan_b):
+				await interaction.followup.send(
+					"That message is not a streamer request embed. Provide `thread_id`, `clan_a`, and `clan_b` to add one.",
+					ephemeral=True,
+				)
+				return
+
+			dt_iso = _parse_display_dt_utc(when) if when else None
+
+			parsed_entry = {
+				"id": str(thread_id),
+				"thread_id": int(thread_id),
+				"clan_a": clan_a.strip(),
+				"clan_b": clan_b.strip(),
+				"datetime_utc": dt_iso,
+				"event_url": event_url or None,
+				"event_id": _parse_event_id_from_url(event_url) if event_url else None,
+				"request_message_id": request_message.id,
+				"accepted_by": [],
+				"rejected_by": [],
+				"created_at": request_message.created_at.astimezone(timezone.utc).isoformat(),
+			}
+
+			state = _load_streamer_state()
+			_normalize_streamer_requests(state)
+			requests = state.get("requests", {})
+			if not isinstance(requests, dict):
+				requests = {}
+
+			hit = _find_request_for_fixture(
+				state,
+				thread_id=parsed_entry.get("thread_id") if isinstance(parsed_entry.get("thread_id"), int) else None,
+				event_id=parsed_entry.get("event_id") if isinstance(parsed_entry.get("event_id"), int) else None,
+			)
+			request_id = str(parsed_entry["thread_id"])
+			entry = parsed_entry
+			if hit is not None:
+				rid, existing = hit
+				entry = _merge_request_entries(existing, parsed_entry)
+				if rid != request_id:
+					requests.pop(rid, None)
+
+			requests[request_id] = entry
+			state["requests"] = requests
+			_save_streamer_state(state)
+
+			# Add an embed to the message for consistency; do NOT mention streamer role.
+			try:
+				await request_message.edit(content=None, embed=_request_embed_from_entry(entry), view=StreamerRequestActionsView(self.bot))
+			except Exception:
+				pass
+
+			if isinstance(STREAMER_CALENDAR_CHANNEL_ID, int) and STREAMER_CALENDAR_CHANNEL_ID > 0:
+				cal = interaction.guild.get_channel(STREAMER_CALENDAR_CHANNEL_ID)
+				if isinstance(cal, discord.TextChannel):
+					await _refresh_streamer_board(self.bot, interaction.guild, cal)
+
 			await interaction.followup.send(
-				"That message is not a valid streamer request embed, so I could not rebuild the calendar entry.",
+				f"Calendar entry added for {entry.get('clan_a', '?')} vs {entry.get('clan_b', '?')}.",
 				ephemeral=True,
 			)
 			return
+
 		accepted_count = len(entry.get("accepted_by", [])) if isinstance(entry.get("accepted_by"), list) else 0
 		await interaction.followup.send(
 			f"Calendar entry repaired for {entry.get('clan_a', '?')} vs {entry.get('clan_b', '?')}. Accepted streamers: {accepted_count}.",
