@@ -10,8 +10,9 @@ from typing import Any, Optional
 
 import discord
 from discord.ext import commands
+from discord.ext import tasks
 
-from cogs.streamercalendar import maybe_post_streamer_request
+from cogs.streamercalendar import maybe_post_streamer_request, maybe_remove_streamer_request
 
 from data_paths import data_path
 from league_config import CLAN_ROLE_IDS, ROUND_WINDOWS, STREAMER_ROLE_ID
@@ -41,6 +42,9 @@ SCHEDULED_EVENT_GUILD_ID = GUILD_ID
 
 # Optional: channel to associate to the scheduled event (voice/stage). Leave None to create an external event.
 SCHEDULED_EVENT_CHANNEL_ID: Optional[int] = None
+
+# Remove completed fixtures and their scheduled events some hours after kickoff.
+FIXTURE_RETENTION_AFTER_START = timedelta(hours=8)
 
 
 
@@ -399,13 +403,17 @@ async def _get_thread_channel(client: discord.Client, thread_id: int) -> Optiona
 async def _maybe_notify_streamer(
 	client: discord.Client,
 	s: FixtureState,
-	ev: discord.ScheduledEvent,
+	ev: Optional[discord.ScheduledEvent],
 	*,
 	guild: Optional[discord.Guild] = None,
 ) -> None:
-	if s.agreed_streamer is not True:
-		return
 	if guild is None:
+		return
+	if s.agreed_streamer is not True:
+		try:
+			await maybe_remove_streamer_request(client, guild=guild, thread_id=s.thread_id)
+		except Exception:
+			return
 		return
 	try:
 		await maybe_post_streamer_request(
@@ -415,8 +423,8 @@ async def _maybe_notify_streamer(
 			clan_a=s.clan_a,
 			clan_b=s.clan_b,
 			datetime_utc_iso=s.agreed_datetime_utc,
-			event_id=int(getattr(ev, "id", 0) or 0),
-			event_url=str(getattr(ev, "url", "")),
+			event_id=int(getattr(ev, "id", 0) or s.scheduled_event_id or 0),
+			event_url=str(getattr(ev, "url", "") or ""),
 		)
 	except Exception:
 		return
@@ -454,7 +462,6 @@ async def _auto_sync_event(client: discord.Client, guild: Optional[discord.Guild
 		return
 
 	# Create event when core details are agreed; later append sides/server and flip emoji.
-	before_event_id = s.scheduled_event_id
 	ev = await _create_or_update_scheduled_event(
 		client,
 		guild=guild,
@@ -462,12 +469,12 @@ async def _auto_sync_event(client: discord.Client, guild: Optional[discord.Guild
 		create_if_missing=True,
 		append_sides_if_ready=True,
 	)
+
+	await _maybe_notify_streamer(client, s, ev, guild=guild)
 	if ev is None:
 		return
 
 	# Best-effort notifications.
-	if before_event_id is None and s.scheduled_event_id is not None:
-		await _maybe_notify_streamer(client, s, ev, guild=guild)
 	await _maybe_post_agreement_snapshot(client, s, ev)
 
 	state["threads"][s.key] = _state_to_dict(s)
@@ -684,6 +691,55 @@ async def _fetch_scheduled_event(guild: discord.Guild, event_id: int) -> Optiona
 		return await guild.fetch_scheduled_event(event_id)
 	except Exception:
 		return None
+
+
+def _fixture_expired(s: FixtureState, *, now: Optional[datetime] = None) -> bool:
+	if not s.agreed_datetime_utc:
+		return False
+	try:
+		start_dt = datetime.fromisoformat(s.agreed_datetime_utc)
+		if start_dt.tzinfo is None:
+			start_dt = start_dt.replace(tzinfo=timezone.utc)
+		start_dt = start_dt.astimezone(timezone.utc)
+	except Exception:
+		return False
+	current = now or datetime.now(timezone.utc)
+	return start_dt + FIXTURE_RETENTION_AFTER_START <= current
+
+
+async def _prune_expired_fixture_state(bot: commands.Bot) -> None:
+	state = _load_state()
+	threads = state.get("threads", {})
+	if not isinstance(threads, dict):
+		return
+	guild = bot.get_guild(SCHEDULED_EVENT_GUILD_ID)
+	now = datetime.now(timezone.utc)
+	changed = False
+	for thread_id_str, raw in list(threads.items()):
+		if not isinstance(raw, dict):
+			threads.pop(thread_id_str, None)
+			changed = True
+			continue
+		s = _dict_to_state(raw)
+		if not _fixture_expired(s, now=now):
+			continue
+		if guild is not None and s.scheduled_event_id:
+			ev = await _fetch_scheduled_event(guild, int(s.scheduled_event_id))
+			if ev is not None:
+				try:
+					await ev.delete()
+				except Exception:
+					pass
+		if guild is not None:
+			try:
+				await maybe_remove_streamer_request(bot, guild=guild, thread_id=s.thread_id)
+			except Exception:
+				pass
+		threads.pop(thread_id_str, None)
+		changed = True
+	if changed:
+		state["threads"] = threads
+		_save_state(state)
 
 
 async def _create_or_update_scheduled_event(
@@ -1623,6 +1679,18 @@ class EventOrganiser(commands.Cog):
 		self._lock = asyncio.Lock()
 		bot.add_view(OrganiserHomeView())
 		# Note: thread views are reposted on startup; no need for full persistent registration per-thread.
+		self.cleanup_expired_fixtures.start()
+
+	def cog_unload(self):
+		self.cleanup_expired_fixtures.cancel()
+
+	@tasks.loop(minutes=15)
+	async def cleanup_expired_fixtures(self):
+		await _prune_expired_fixture_state(self.bot)
+
+	@cleanup_expired_fixtures.before_loop
+	async def before_cleanup_expired_fixtures(self):
+		await self.bot.wait_until_ready()
 
 	@commands.Cog.listener()
 	async def on_ready(self):
@@ -1630,6 +1698,7 @@ class EventOrganiser(commands.Cog):
 			return
 
 		async with self._lock:
+			await _prune_expired_fixture_state(self.bot)
 			await self._ensure_home_embed()
 			await self._repost_thread_controls()
 
