@@ -61,7 +61,11 @@ def _discord_message_url(*, guild_id: int, channel_id: int, message_id: int) -> 
 
 
 def _parse_message_link(link: str) -> Optional[tuple[int, int, int]]:
-	match = re.match(r"^https?://(?:canary\.)?discord\.com/channels/(\d+)/(\d+)/(\d+)/?$", str(link or "").strip())
+	# Accept discord.com, discordapp.com and common subdomains (canary/ptb)
+	match = re.match(
+		r"^https?://(?:(?:canary|ptb|staging)\.)?(?:discord(?:app)?\.com)/channels/(\d+)/(\d+)/(\d+)/?$",
+		str(link or "").strip(),
+	)
 	if not match:
 		return None
 	try:
@@ -195,11 +199,18 @@ def _request_link_text(
 		clan_b=str(entry.get("clan_b", "?")),
 		dt_iso=entry.get("datetime_utc") if isinstance(entry.get("datetime_utc"), str) else None,
 	)
-	target = _request_target_url(guild_id=guild_id, requests_channel_id=requests_channel_id, entry=entry)
-	if not target:
-		return line
+	event_url = entry.get("event_url") if isinstance(entry.get("event_url"), str) else None
+	msg_id = entry.get("request_message_id")
+	msg_url = None
+	if isinstance(msg_id, int) and msg_id > 0:
+		msg_url = _discord_message_url(guild_id=guild_id, channel_id=requests_channel_id, message_id=msg_id)
 	label = line.replace("\\", "\\\\").replace("]", "\\]")
-	return f"[{label}]({target})"
+	# Prefer the original request message link as the primary hyperlink. Fall back to event URL if no request message.
+	if msg_url:
+		return f"[{label}]({msg_url})"
+	if event_url:
+		return f"[{label}]({event_url})"
+	return line
 
 
 def _merge_request_entries(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
