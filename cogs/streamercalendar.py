@@ -60,16 +60,21 @@ def _discord_message_url(*, guild_id: int, channel_id: int, message_id: int) -> 
 	return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
 
 
-def _parse_message_link(link: str) -> Optional[tuple[int, int, int]]:
+def _parse_message_link(link: str) -> Optional[tuple[int, int, Optional[int]]]:
 	# Accept discord.com, discordapp.com and common subdomains (canary/ptb)
+	# Supports both message links (/channels/guild/channel/message) and
+	# channel/thread links (/channels/guild/channel).
 	match = re.match(
-		r"^https?://(?:(?:canary|ptb|staging)\.)?(?:discord(?:app)?\.com)/channels/(\d+)/(\d+)/(\d+)/?$",
+		r"^https?://(?:(?:canary|ptb|staging)\.)?(?:discord(?:app)?\.com)/channels/(\d+)/(\d+)(?:/(\d+))?/?$",
 		str(link or "").strip(),
 	)
 	if not match:
 		return None
 	try:
-		return int(match.group(1)), int(match.group(2)), int(match.group(3))
+		g = int(match.group(1))
+		c = int(match.group(2))
+		m = match.group(3)
+		return (g, c, int(m) if m and m.isdigit() else None)
 	except Exception:
 		return None
 
@@ -805,22 +810,33 @@ class StreamerCalendar(commands.Cog):
 		if not isinstance(channel, discord.TextChannel):
 			await interaction.followup.send("I could not access that request channel.", ephemeral=True)
 			return
-		try:
-			request_message = await channel.fetch_message(message_id)
-		except Exception:
-			await interaction.followup.send("I could not fetch that request message.", ephemeral=True)
-			return
+		# Attempt to fetch the target message if a message id was provided; if the parsed link
+		# is channel-only (no message id) we'll proceed with request creation below.
+		request_message: Optional[discord.Message] = None
+		if message_id is not None:
+			try:
+				request_message = await channel.fetch_message(message_id)
+			except Exception:
+				await interaction.followup.send("I could not fetch that request message.", ephemeral=True)
+				return
+
 		# Try to parse an existing embed and repair state if present.
-		entry = await _repair_streamer_request_from_message(
-			self.bot,
-			guild=interaction.guild,
-			request_message=request_message,
-			accepted_streamer=accepted_streamer,
-		)
+		entry = None
+		if request_message is not None:
+			entry = await _repair_streamer_request_from_message(
+				self.bot,
+				guild=interaction.guild,
+				request_message=request_message,
+				accepted_streamer=accepted_streamer,
+			)
 
 		if entry is None:
 			# If there's no embed, allow manual creation when admin supplies thread_id, clan_a and clan_b.
-			if not (thread_id and clan_a and clan_b):
+			# If the provided link was channel-only, treat that channel id as the match thread id.
+			link_thread_id = channel_id if message_id is None else None
+			effective_thread_id = thread_id or link_thread_id
+
+			if not (effective_thread_id and clan_a and clan_b):
 				await interaction.followup.send(
 					"That message is not a streamer request embed. Provide `thread_id`, `clan_a`, and `clan_b` to add one.",
 					ephemeral=True,
@@ -830,17 +846,17 @@ class StreamerCalendar(commands.Cog):
 			dt_iso = _parse_display_dt_utc(when) if when else None
 
 			parsed_entry = {
-				"id": str(thread_id),
-				"thread_id": int(thread_id),
+				"id": str(effective_thread_id),
+				"thread_id": int(effective_thread_id),
 				"clan_a": clan_a.strip(),
 				"clan_b": clan_b.strip(),
 				"datetime_utc": dt_iso,
 				"event_url": event_url or None,
 				"event_id": _parse_event_id_from_url(event_url) if event_url else None,
-				"request_message_id": request_message.id,
+				"request_message_id": None,
 				"accepted_by": [],
 				"rejected_by": [],
-				"created_at": request_message.created_at.astimezone(timezone.utc).isoformat(),
+				"created_at": datetime.now(timezone.utc).isoformat(),
 			}
 
 			state = _load_streamer_state()
@@ -862,15 +878,19 @@ class StreamerCalendar(commands.Cog):
 				if rid != request_id:
 					requests.pop(rid, None)
 
+			# Create a new request message in the streamer requests channel (do NOT ping streamer role).
+			requests_channel = interaction.guild.get_channel(STREAMER_REQUESTS_CHANNEL_ID)
+			new_msg = None
+			if isinstance(requests_channel, discord.TextChannel):
+				try:
+					new_msg = await requests_channel.send(content=None, embed=_request_embed_from_entry(entry), view=StreamerRequestActionsView(self.bot))
+					entry["request_message_id"] = new_msg.id
+				except Exception:
+					new_msg = None
+
 			requests[request_id] = entry
 			state["requests"] = requests
 			_save_streamer_state(state)
-
-			# Add an embed to the message for consistency; do NOT mention streamer role.
-			try:
-				await request_message.edit(content=None, embed=_request_embed_from_entry(entry), view=StreamerRequestActionsView(self.bot))
-			except Exception:
-				pass
 
 			if isinstance(STREAMER_CALENDAR_CHANNEL_ID, int) and STREAMER_CALENDAR_CHANNEL_ID > 0:
 				cal = interaction.guild.get_channel(STREAMER_CALENDAR_CHANNEL_ID)
