@@ -801,14 +801,16 @@ class StreamerCalendar(commands.Cog):
 			await interaction.followup.send("The request message link must point to this server.", ephemeral=True)
 			return
 		channel = interaction.guild.get_channel(channel_id)
+		if channel is None and hasattr(interaction.guild, "get_thread"):
+			channel = interaction.guild.get_thread(channel_id)
 		if channel is None:
 			try:
 				fetched = await self.bot.fetch_channel(channel_id)
 			except Exception:
 				fetched = None
-			channel = fetched if isinstance(fetched, discord.TextChannel) else None
-		if not isinstance(channel, discord.TextChannel):
-			await interaction.followup.send("I could not access that request channel.", ephemeral=True)
+			channel = fetched if isinstance(fetched, (discord.TextChannel, discord.Thread)) else None
+		if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+			await interaction.followup.send("I could not access that request channel or thread.", ephemeral=True)
 			return
 		# Attempt to fetch the target message if a message id was provided; if the parsed link
 		# is channel-only (no message id) we'll proceed with request creation below.
