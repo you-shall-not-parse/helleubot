@@ -390,7 +390,8 @@ def _board_embed(
 			except Exception:
 				pass
 			items.append((dt_sort, str(rid), raw))
-	items.sort(key=lambda x: x[0], reverse=True)
+	# Order by date ascending (earliest first)
+	items.sort(key=lambda x: x[0])
 
 	accepted_lines: list[str] = []
 	unaccepted_lines: list[str] = []
@@ -406,9 +407,11 @@ def _board_embed(
 			for uid in accepted_by:
 				if not isinstance(uid, int):
 					continue
-				accepted_lines.append(f"- <@{uid}> — {line_base}")
+				# No bullet point; show accepter then the event line
+				accepted_lines.append(f"<@{uid}> — {line_base}")
 		else:
-			unaccepted_lines.append(f"- {line_base}")
+			# No bullet point for outstanding requests
+			unaccepted_lines.append(f"{line_base}")
 
 	if len(accepted_lines) > max_lines:
 		accepted_lines = accepted_lines[:max_lines]
