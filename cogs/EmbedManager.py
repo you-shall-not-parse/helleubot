@@ -378,9 +378,9 @@ class EmbedManager(commands.Cog):
             name=":boom: Artillery & SPA",
             value=(
                 "- The use of HLL log utilities is **prohibited**.\n"
-                "- Static HQ2 artillery players are unkillable (if fielding a gun).\n"
+                "- Static HQ2 artillery players are unkillable.\n"
                 "- Multiple artillery squads can be fielded but only one static gun is permitted.\n"
-                "- Artillery Observer (SL) must operate the gun and cannot move freely on the map\n"
+                "- Artillery Observer (SL) must operate the gun\n"
                 "- Designated Artillery Player (DAP) & Reloader:\n"
                 "   - First player to get a kill is the DAP.\n"
                 "   - Each team may assign one reloader in the same squad.\n"
@@ -389,12 +389,12 @@ class EmbedManager(commands.Cog):
                 "   - If either are killed, both must return to the gun without returning fire.\n"
                 "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ is permitted to move it\n"
                 "- **Commander artillery is prohibited**\n"
-                "- An artillery glitch can happen whereby rounds won't fire, gunner (and loader if used) can leave the gun provided that a clip is submitted showing the gun not loading 2/3 times.\n"
+                "- An artillery glitch can happen where rounds won't fire, operators can leave the gun provided that a clip is submitted after match showing the gun not loading 2/3 times.\n"
                 "- Outfield artillery gun rules are permitted if agreed by both teams and is subect to the following rules:\n"
-                "   - Static Artillery in the HQ2 using the pre-placed blueprints is prohibited.\n"
+                "   - Artillery in HQ2 using the pre-placed blueprints is prohibited.\n"
                 "   - The outfield artillery gun(s) must be placed >50 meters away from nodes.\n"
                 "   - Artillery players are killable and gun destructable.\n"
-                "   - Artillery players are to be treated as infantry and are free to roam, switch class, kill and tank, etc\n"
+                "   - Artillery players are to be treated as infantry and are free to switch class, kill and tank, etc\n"
             ),
             inline=False,
         )
