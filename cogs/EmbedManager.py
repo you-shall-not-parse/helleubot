@@ -362,7 +362,7 @@ class EmbedManager(commands.Cog):
         embed2.add_field(
             name="📜 Anti-Cheat and Duration Protection",
             value=(
-                "- No roster locks required\n"
+                "- No rosters required\n"
                 "- Admin cam logs / player_ids may be requested by the opposing team\n"
                 "- **No win condition within the first 30 minutes**\n"
                 "- Deliberate clipping inside an asset that prevents you being shot but allows you to shoot out is prohibited, this does not include terrain clipping as a result of natural gameplay\n"
@@ -370,7 +370,6 @@ class EmbedManager(commands.Cog):
                 "- The use of cronus/XIM or other controller emulator is prohibited\n"
                 "- Hired guns are prohibited however coalition teams may be formed and fielded\n"
                 "- Players transferred between clans competing in the current season are banned from playing for their new clan until the following season\n"
-                "- Footage and consequence is subject to review by league admins if submitted as part of a protest\n"
                 "- Panther tank is prohibited (banned) unless agreed by both teams for use, Tiger tank becomes prohibited (banned) to prevent unfair axis spawn advantage\n"
             ),
             inline=False,
@@ -378,18 +377,24 @@ class EmbedManager(commands.Cog):
         embed2.add_field(
             name=":boom: Artillery & SPA",
             value=(
-                "- The use of HLL log utilities is prohibited.\n"
+                "- The use of HLL log utilities is **prohibited**.\n"
+                "- Static HQ2 artillery players are unkillable (if fielding a gun).\n"
                 "- Multiple artillery squads can be fielded but only one static gun is permitted.\n"
                 "- Artillery Observer (SL) must operate the gun and cannot move freely on the map\n"
                 "- Designated Artillery Player (DAP) & Reloader:\n"
                 "   - First player to get a kill is the DAP.\n"
-                "   - Each team may assign one reloader in the same artillery squad.\n"
-                "   - Both must stay on one assigned gun; you cannot switch guns.\n"
-                "   - Both cannot leave the gun or attack enemies.\n"
-                "   - If either are accidentally killed, both must return to the gun without returning fire.\n"
+                "   - Each team may assign one reloader in the same squad.\n"
+                "   - Both must stay on one assigned gun; cannot switch guns.\n"
+                "   - Both cannot leave the gun and attack enemies.\n"
+                "   - If either are killed, both must return to the gun without returning fire.\n"
                 "- SPA is prohibited unless otherwise explicitly agreed by both teams and driving (only) within the HQ is permitted to move it\n"
-                "- Commander artillery is prohibited\n" 
-                "- Artillery glitch can happen whereby rounds won't fire, gunner (and loader if used) can leave the gun provided that a clip is submitted showing the gun not loading 2-3 times.\n"
+                "- **Commander artillery is prohibited**\n"
+                "- An artillery glitch can happen whereby rounds won't fire, gunner (and loader if used) can leave the gun provided that a clip is submitted showing the gun not loading 2/3 times.\n"
+                "- Outfield artillery gun rules are permitted if agreed by both teams and is subect to the following rules:\n"
+                "   - Static Artillery in the HQ2 using the pre-placed blueprints is prohibited.\n"
+                "   - The outfield artillery gun(s) must be placed >50 meters away from nodes.\n"
+                "   - Artillery players are killable and gun destructable.\n"
+                "   - Artillery players are to be treated as infantry and are free to roam, switch class, kill and tank, etc\n"
             ),
             inline=False,
         )
@@ -398,7 +403,6 @@ class EmbedManager(commands.Cog):
             value=(
                 "- Nodes must be built in an HQ sector that is away from artillery and vehicle spawns\n"
                 "- Nodes cannot be destroyed or dismantled by the opposing team\n"
-                "- Failure to comply may result in forfeiture of the match and/or points deducted\n"
             ),
             inline=False,
         )
