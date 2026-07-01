@@ -19,6 +19,24 @@ def _has_echo_role(interaction: discord.Interaction) -> bool:
 	return any(role.id == ECHO_ROLE_ID for role in user.roles)
 
 
+async def _handle_echo_check_failure(
+	interaction: discord.Interaction,
+	error: app_commands.AppCommandError,
+) -> bool:
+	if not isinstance(error, app_commands.CheckFailure):
+		return False
+
+	msg = "You don't have permission to use this command."
+	if not isinstance(ECHO_ROLE_ID, int) or ECHO_ROLE_ID <= 0:
+		msg = "This command isn't configured yet (ECHO_ROLE_ID is not set)."
+
+	if interaction.response.is_done():
+		await interaction.followup.send(msg, ephemeral=True)
+	else:
+		await interaction.response.send_message(msg, ephemeral=True)
+	return True
+
+
 class Echo(commands.Cog):
 	def __init__(self, bot: commands.Bot):
 		self.bot = bot
@@ -35,16 +53,47 @@ class Echo(commands.Cog):
 		if interaction.channel is not None:
 			await interaction.channel.send(message)
 
+	@app_commands.guilds(TARGET_GUILD)
+	@app_commands.guild_only()
+	@app_commands.command(name="echoembed", description="Send a user-defined embed message.")
+	@app_commands.describe(
+		title="Optional embed title",
+		message="The embed body text",
+		image="Optional image attachment to append to the embed",
+	)
+	@app_commands.check(_has_echo_role)
+	async def echoembed(
+		self,
+		interaction: discord.Interaction,
+		message: str,
+		title: str | None = None,
+		image: discord.Attachment | None = None,
+	):
+		if image is not None and not str(getattr(image, "content_type", "")).startswith("image/"):
+			await interaction.response.send_message("The attachment must be an image.", ephemeral=True)
+			return
+
+		embed = discord.Embed(
+			title=title,
+			description=message,
+			color=discord.Color.blurple(),
+		)
+		if image is not None:
+			embed.set_image(url=image.url)
+
+		await interaction.response.send_message("Sent.", ephemeral=True)
+		if interaction.channel is not None:
+			await interaction.channel.send(embed=embed)
+
 	@echo.error
 	async def echo_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-		if isinstance(error, app_commands.CheckFailure):
-			msg = "You don't have permission to use this command."
-			if not isinstance(ECHO_ROLE_ID, int) or ECHO_ROLE_ID <= 0:
-				msg = "This command isn't configured yet (ECHO_ROLE_ID is not set)."
-			if interaction.response.is_done():
-				await interaction.followup.send(msg, ephemeral=True)
-			else:
-				await interaction.response.send_message(msg, ephemeral=True)
+		if await _handle_echo_check_failure(interaction, error):
+			return
+		raise error
+
+	@echoembed.error
+	async def echoembed_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+		if await _handle_echo_check_failure(interaction, error):
 			return
 		raise error
 
