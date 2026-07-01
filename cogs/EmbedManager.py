@@ -15,11 +15,6 @@ DATA_FILE = data_path("stored_embeds.json")
 # Auto-refresh embeds periodically so dynamic sections (like clan reps) stay updated.
 AUTO_SYNC_INTERVAL_MINUTES: int = 30
 
-REMOVED_EMBED_CHANNELS: dict[str, int] = {
-    "rules": 1464642927438463269,
-    "schedule": 1462388344205082685,
-}
-
 # ---------------- HELPER FUNCTIONS ----------------
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -197,34 +192,10 @@ class EmbedManager(commands.Cog):
 
         save_data(self.data)
 
-    async def delete_removed_embed(self, key: str, channel_id: int):
-        stored_id = self.data.get(key)
-        if not stored_id:
-            return
-
-        channel = self.bot.get_channel(channel_id)
-        if channel is None:
-            print(f"[EmbedManager] Channel {channel_id} not found for removed embed '{key}'.")
-            return
-
-        try:
-            msg = await channel.fetch_message(stored_id)
-        except discord.NotFound:
-            msg = None
-
-        if msg is not None:
-            await msg.delete()
-            print(f"[EmbedManager] Deleted retired embed '{key}' from channel {channel.id}")
-
-        self.data.pop(key, None)
-        save_data(self.data)
-
     async def sync_all_embeds(self):
         blocks = self.get_embed_blocks()
         for block in blocks:
             await self.sync_embed_block(block)
-        for key, channel_id in REMOVED_EMBED_CHANNELS.items():
-            await self.delete_removed_embed(key, channel_id)
 
     # ---------------- AUTO-SYNC ON READY ----------------
     @commands.Cog.listener()
