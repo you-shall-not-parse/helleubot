@@ -12,7 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from data_paths import data_path
-from league_config import CLAN_ROLE_IDS
+from league_config import CLAN_ROLE_IDS, DIVISION_CLANS
 
 
 # -----------------------------
@@ -31,8 +31,11 @@ SCOREBOARD_CHANNEL_ID: int = 1462387812815998997
 # Channel where results are posted for confirmation by the opposing clan
 VALIDATION_CHANNEL_ID: int = 1462382488784470181
 
-# Channel where the leaderboard + match images are posted
-LEADERBOARD_CHANNEL_ID: int = 1462384116376014911
+# Channels where the division leaderboards + match images are posted
+LEADERBOARD_CHANNEL_IDS: dict[str, int] = {
+	"Axis Division": 1462384116376014911,
+	"Allied Division": 1521924084588609696,
+}
 
 # Role IDs for each clan (name -> role_id)
 # Source of truth is league_config.py
@@ -106,6 +109,36 @@ def _role_name_from_id(role_id: int) -> str:
 		if rid == role_id:
 			return name
 	return f"Role {role_id}"
+
+
+def _division_for_clan_name(clan_name: str) -> Optional[str]:
+	for division, clans in DIVISION_CLANS.items():
+		if clan_name in clans:
+			return division
+	return None
+
+
+def _stats_for_division(stats: dict[str, Any], division: str) -> dict[str, Any]:
+	allowed = set(DIVISION_CLANS.get(division, []))
+	filtered: dict[str, Any] = {}
+	for rid_str, entry in stats.items():
+		if not isinstance(entry, dict):
+			continue
+		name = str(entry.get("name") or "")
+		if name in allowed:
+			filtered[rid_str] = entry
+	return filtered
+
+
+def _last_result_for_division(last_result: Any, division: str) -> Optional[dict[str, Any]]:
+	if not isinstance(last_result, dict):
+		return None
+	allowed = set(DIVISION_CLANS.get(division, []))
+	a_name = str(last_result.get("a_name") or "")
+	b_name = str(last_result.get("b_name") or "")
+	if a_name in allowed and b_name in allowed:
+		return last_result
+	return None
 
 
 def _build_leaderboard_embed(stats: dict[str, Any]) -> discord.Embed:
@@ -186,7 +219,7 @@ def _build_leaderboard_text(stats: dict[str, Any]) -> str:
 def _build_scoreboard_embed() -> discord.Embed:
 	embed = discord.Embed(
 		title="Submit Match Scores",
-		description="- Click the button below to submit a match result for validation by the opposing clan. \n - It will then post a submission in <#1462382488784470181> for the opposing side to confirm \n - When confirmed the league table updates in <#1462384116376014911>, this may queue and take up to 5-10 mins \n - Make sure you have linked the <#1462384116376014911> announcement channel as a feed in your clan discord or just copy and paste the table if you prefer",
+		description="- Click the button below to submit a match result for validation by the opposing clan. \n - It will then post a submission in <#1462382488784470181> for the opposing side to confirm \n - When confirmed the division league tables update in <#1462384116376014911> and <#1521924084588609696>; this may queue and take up to 5-10 mins \n - Make sure you have linked the relevant announcement channel as a feed in your clan discord or just copy and paste the table if you prefer",
 		colour=discord.Colour.green(),
 	)
 	return embed
@@ -256,10 +289,20 @@ class ScoreboardStore:
 
 			self.data.setdefault("scoreboard_message_id", None)
 			self.data.setdefault("leaderboard_message_id", None)
+			self.data.setdefault("leaderboard_message_ids", {})
 			self.data.setdefault("last_result", None)
 			self.data.setdefault("clan_stats", {})
 			self.data.setdefault("pending_matches", {})  # match_id -> match dict
 			self.data.setdefault("pending_by_validation_message", {})  # message_id(str) -> match_id
+
+			message_ids = self.data.get("leaderboard_message_ids")
+			if not isinstance(message_ids, dict):
+				message_ids = {}
+				self.data["leaderboard_message_ids"] = message_ids
+
+			legacy_message_id = self.data.get("leaderboard_message_id")
+			if legacy_message_id and not message_ids.get("Axis Division"):
+				message_ids["Axis Division"] = legacy_message_id
 			await self._ensure_clans_locked()
 
 	async def save(self) -> None:
@@ -836,60 +879,62 @@ class ScoreboardCog(commands.Cog):
 					log.info("Leaderboard update cooling down for %.1fs", sleep_time)
 					await asyncio.sleep(sleep_time)
 
-				if LEADERBOARD_CHANNEL_ID == 0:
-					return
-				channel = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
-				if channel is None:
-					try:
-						channel = await self.bot.fetch_channel(LEADERBOARD_CHANNEL_ID)
-					except Exception:
-						log.exception("Failed to fetch leaderboard channel")
-						return
-				if not isinstance(channel, discord.TextChannel):
-					return
-
-				message_id = self.store.data.get("leaderboard_message_id")
-				image_path = await self._render_scoreboard_image()
-				filename = os.path.basename(image_path)
-
-				def _make_file() -> discord.File:
-					# A discord.File can be consumed/closed by a send/edit attempt.
-					# Create a fresh instance each time we retry.
-					return discord.File(image_path, filename=filename)
-
-				file = _make_file()
-				embed = discord.Embed(
-					title="League Scoreboard",
-					colour=discord.Colour.blurple(),
-					timestamp=datetime.now(timezone.utc),
-				)
-				embed.set_image(url=f"attachment://{filename}")
-				content = ""
-
 				try:
-					if message_id:
-						try:
-							msg = await channel.fetch_message(int(message_id))
-							await msg.edit(content=content, embed=embed, attachments=[file])
-						except discord.NotFound:
-							# Message was deleted; clear the stored ID and re-send.
-							self.store.data["leaderboard_message_id"] = None
-							await self.store.save()
-							file = _make_file()
-							msg = await channel.send(content=content, embed=embed, file=file)
-							self.store.data["leaderboard_message_id"] = msg.id
-							await self.store.save()
-					else:
-						msg = await channel.send(content=content, embed=embed, file=file)
-						self.store.data["leaderboard_message_id"] = msg.id
-						await self.store.save()
+					message_ids = self.store.data.setdefault("leaderboard_message_ids", {})
+					updated_messages: dict[str, Any] = {}
+					for division, channel_id in LEADERBOARD_CHANNEL_IDS.items():
+						if channel_id == 0:
+							continue
+						channel = self.bot.get_channel(channel_id)
+						if channel is None:
+							try:
+								channel = await self.bot.fetch_channel(channel_id)
+							except Exception:
+								log.exception("Failed to fetch leaderboard channel for %s", division)
+								continue
+						if not isinstance(channel, discord.TextChannel):
+							continue
 
-					# Only mark the timestamp after a successful update.
+						message_id = message_ids.get(division)
+						image_path = await self._render_scoreboard_image(division)
+						filename = os.path.basename(image_path)
+
+						def _make_file() -> discord.File:
+							return discord.File(image_path, filename=filename)
+
+						file = _make_file()
+						embed = discord.Embed(
+							title=f"{division} Scoreboard",
+							colour=discord.Colour.blurple(),
+							timestamp=datetime.now(timezone.utc),
+						)
+						embed.set_image(url=f"attachment://{filename}")
+						content = ""
+
+						if message_id:
+							try:
+								msg = await channel.fetch_message(int(message_id))
+								await msg.edit(content=content, embed=embed, attachments=[file])
+							except discord.NotFound:
+								message_ids[division] = None
+								await self.store.save()
+								file = _make_file()
+								msg = await channel.send(content=content, embed=embed, file=file)
+								message_ids[division] = msg.id
+								await self.store.save()
+						else:
+							msg = await channel.send(content=content, embed=embed, file=file)
+							message_ids[division] = msg.id
+							await self.store.save()
+
+						updated_messages[division] = message_ids.get(division)
+
+					# Only mark the timestamp after a successful update pass.
 					self._last_leaderboard_update_ts = asyncio.get_running_loop().time()
 					self._leaderboard_rate_limited_until_ts = 0.0
 					log.info(
-						"Leaderboard updated message_id=%s requests=%s",
-						self.store.data.get("leaderboard_message_id"),
+						"Leaderboards updated messages=%s requests=%s",
+						updated_messages,
 						self._leaderboard_update_request_count,
 					)
 				except discord.HTTPException as e:
@@ -924,7 +969,7 @@ class ScoreboardCog(commands.Cog):
 				continue
 			break
 
-	async def _render_scoreboard_image(self) -> str:
+	async def _render_scoreboard_image(self, division: str) -> str:
 		"""Render the scoreboard onto the provided template image."""
 		from PIL import Image, ImageDraw, ImageFont  # pillow
 
@@ -967,7 +1012,7 @@ class ScoreboardCog(commands.Cog):
 		table_bottom = int(h * 0.94)
 
 		# Latest result text (centered)
-		last = self.store.data.get("last_result")
+		last = _last_result_for_division(self.store.data.get("last_result"), division)
 		center_y = result_top + ((result_bottom - result_top) // 2)
 		if isinstance(last, dict):
 			a_name = str(last.get("a_name", "") or "")
@@ -994,7 +1039,7 @@ class ScoreboardCog(commands.Cog):
 			draw.text((w // 2, center_y), result_text, font=result_font, fill=text_fill, anchor="mm")
 
 		# Leaderboard table (auto-fit all teams)
-		rows = _sorted_leaderboard_rows(self.store.data.get("clan_stats", {}))
+		rows = _sorted_leaderboard_rows(_stats_for_division(self.store.data.get("clan_stats", {}), division))
 		row_count = max(1, len(rows))
 		usable_top = table_top + int(h * 0.06)
 		usable_bottom = table_bottom - int(h * 0.03)
@@ -1042,7 +1087,8 @@ class ScoreboardCog(commands.Cog):
 			played = int(r.get("w", 0)) + int(r.get("l", 0))
 			draw.text((col_mp, y), str(played), font=row_font, fill=text_fill, anchor="ma")
 
-		out_path = data_path("scoreboard_rendered.png")
+		safe_division = division.lower().replace(" ", "_")
+		out_path = data_path(f"scoreboard_rendered_{safe_division}.png")
 		base.save(out_path, format="PNG")
 		return out_path
 
@@ -1347,8 +1393,9 @@ class ScoreboardCog(commands.Cog):
 	@app_commands.check(_admin_app_command_check)
 	async def scoreboard_leaderboard_repost(self, interaction: discord.Interaction):
 		await interaction.response.defer(ephemeral=True)
-		# Clear stored message id so the next update sends a fresh message.
+		# Clear stored message ids so the next update sends fresh messages.
 		self.store.data["leaderboard_message_id"] = None
+		self.store.data["leaderboard_message_ids"] = {division: None for division in LEADERBOARD_CHANNEL_IDS.keys()}
 		await self.store.save()
 
 		# Best-effort: bypass the local cooldown so admins can repost immediately.
@@ -1356,7 +1403,7 @@ class ScoreboardCog(commands.Cog):
 		self._leaderboard_rate_limited_until_ts = 0.0
 
 		await self.ensure_leaderboard_message()
-		await interaction.followup.send("Queued a fresh leaderboard repost (new message).", ephemeral=True)
+		await interaction.followup.send("Queued fresh leaderboard reposts for both divisions.", ephemeral=True)
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.command(name="scoreboard_admin_reset", description="Admin: reset leaderboard and clear latest result")
@@ -1384,6 +1431,10 @@ class ScoreboardCog(commands.Cog):
 		# Optional: clear pending matches (fresh season)
 		self.store.data["pending_matches"] = {}
 		self.store.data["pending_by_validation_message"] = {}
+		self.store.data["leaderboard_message_ids"] = {
+			division: self.store.data.get("leaderboard_message_ids", {}).get(division)
+			for division in LEADERBOARD_CHANNEL_IDS.keys()
+		}
 
 		await self.store.save()
 		await self.ensure_leaderboard_message()

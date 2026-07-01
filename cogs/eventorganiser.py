@@ -15,7 +15,7 @@ from discord.ext import tasks
 from cogs.streamercalendar import maybe_post_streamer_request, maybe_remove_streamer_request
 
 from data_paths import data_path
-from league_config import CLAN_ROLE_IDS, ROUND_WINDOWS, STREAMER_ROLE_ID
+from league_config import CLAN_ROLE_IDS, DIVISION_CLANS, DIVISION_FIXTURES_BY_ROUND, ROUND_WINDOWS, STREAMER_ROLE_ID
 
 # =============================
 # CONFIG (EDIT THIS)
@@ -232,6 +232,7 @@ class FixtureState:
 	clan_a: str
 	clan_b: str
 	round_no: int
+	division: Optional[str] = None
 
 	# Message inside the thread that holds the single "control embed" we keep editing.
 	control_message_id: Optional[int] = None
@@ -301,6 +302,7 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"clan_a": s.clan_a,
 		"clan_b": s.clan_b,
 		"round_no": s.round_no,
+		"division": s.division,
 		"control_message_id": s.control_message_id,
 		"proposed_datetime_utc": s.proposed_datetime_utc,
 		"proposed_datetime_by": s.proposed_datetime_by,
@@ -347,6 +349,7 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		clan_a=str(d["clan_a"]),
 		clan_b=str(d["clan_b"]),
 		round_no=int(d["round_no"]),
+		division=d.get("division"),
 		control_message_id=d.get("control_message_id"),
 		proposed_datetime_utc=d.get("proposed_datetime_utc"),
 		proposed_datetime_by=d.get("proposed_datetime_by"),
@@ -485,6 +488,8 @@ async def _auto_sync_event(client: discord.Client, guild: Optional[discord.Guild
 def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None) -> str:
 	parts: list[str] = []
 	parts.append("AGREEMENT SNAPSHOT (do not edit)")
+	if s.division:
+		parts.append(f"Division: {s.division}")
 	parts.append(f"Fixture: {s.clan_a} vs {s.clan_b}")
 	parts.append(f"Round: {s.round_no} ({_format_round_window(s.round_no)})")
 	if s.agreed_datetime_utc:
@@ -530,8 +535,14 @@ def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None
 def _find_user_clan(member: discord.Member) -> Optional[str]:
 	hits: list[str] = []
 	for clan, role_id in CLAN_ROLE_IDS.items():
-		if isinstance(role_id, int) and role_id > 0 and any(r.id == role_id for r in member.roles):
-			hits.append(clan)
+		for role in member.roles:
+			role_name = str(getattr(role, "name", "")).strip().lower()
+			matches_id = isinstance(role_id, int) and role_id > 0 and role.id == role_id
+			matches_name = role_name == clan.strip().lower()
+			if matches_id or matches_name:
+				if clan not in hits:
+					hits.append(clan)
+				break
 	if len(hits) == 1:
 		return hits[0]
 	return None
@@ -539,9 +550,33 @@ def _find_user_clan(member: discord.Member) -> Optional[str]:
 
 def _clan_role(guild: discord.Guild, clan: str) -> Optional[discord.Role]:
 	rid = CLAN_ROLE_IDS.get(clan)
-	if not isinstance(rid, int) or rid <= 0:
-		return None
-	return guild.get_role(rid)
+	if isinstance(rid, int) and rid > 0:
+		role = guild.get_role(rid)
+		if role is not None:
+			return role
+	target = clan.strip().lower()
+	for role in guild.roles:
+		if str(getattr(role, "name", "")).strip().lower() == target:
+			return role
+	return None
+
+
+def _division_for_clan(clan: str) -> Optional[str]:
+	for division, clans in DIVISION_CLANS.items():
+		if clan in clans:
+			return division
+	return None
+
+
+def _opponents_for_fixture(division: str, round_no: int, requester_clan: str) -> list[str]:
+	fixtures = DIVISION_FIXTURES_BY_ROUND.get(division, {}).get(round_no, [])
+	opponents: list[str] = []
+	for clan_a, clan_b in fixtures:
+		if clan_a == requester_clan:
+			opponents.append(clan_b)
+		elif clan_b == requester_clan:
+			opponents.append(clan_a)
+	return opponents
 
 
 def _reroll_count_for(s: FixtureState, clan: str) -> int:
@@ -615,7 +650,8 @@ def _history_lines(items: list[dict[str, Any]], *, kind: str, limit: int = 6) ->
 
 
 def _fixture_title(s: FixtureState) -> str:
-	return f"Round {s.round_no}: {s.clan_a} vs {s.clan_b}"
+	prefix = f"{s.division} • " if s.division else ""
+	return f"{prefix}Round {s.round_no}: {s.clan_a} vs {s.clan_b}"
 
 
 _EVENT_TITLE_PENDING_EMOJI = "❗"
@@ -918,9 +954,17 @@ class OrganiseFixtureButton(discord.ui.Button):
 			)
 			return
 
-		view = OpponentRoundView(requester_clan=clan)
+		division = _division_for_clan(clan)
+		if not division:
+			await interaction.response.send_message(
+				"Your clan is not assigned to an active division.",
+				ephemeral=True,
+			)
+			return
+
+		view = OpponentRoundView(requester_clan=clan, requester_division=division)
 		await interaction.response.send_message(
-			"Select the opposing clan and round:",
+			"Select the division, opposing clan, and round:",
 			view=view,
 			ephemeral=True,
 		)
@@ -932,17 +976,45 @@ class OrganiserHomeView(discord.ui.View):
 		self.add_item(OrganiseFixtureButton())
 
 
+class DivisionSelect(discord.ui.Select):
+	def __init__(self, requester_division: str):
+		options = [
+			discord.SelectOption(
+				label=division,
+				value=division,
+				default=(division == requester_division),
+			)
+			for division in DIVISION_CLANS.keys()
+		]
+		super().__init__(
+			placeholder="Choose division",
+			min_values=1,
+			max_values=1,
+			options=options,
+		)
+
+	async def callback(self, interaction: discord.Interaction):
+		view = self.view
+		if isinstance(view, OpponentRoundView) and self.values:
+			selected = self.values[0]
+			view.division = selected
+			view.opponent_clan = None
+			for opt in self.options:
+				opt.default = (opt.value == selected)
+			view.refresh_opponent_options()
+			await interaction.response.edit_message(view=view)
+			return
+		await interaction.response.defer()
+
+
 class OpponentSelect(discord.ui.Select):
-	def __init__(self, requester_clan: str):
-		options = []
-		for clan in CLAN_ROLE_IDS.keys():
-			if clan != requester_clan:
-				options.append(discord.SelectOption(label=clan, value=clan))
+	def __init__(self):
 		super().__init__(
 			placeholder="Choose opposing clan",
 			min_values=1,
 			max_values=1,
-			options=options,
+			options=[discord.SelectOption(label="Select division and round first", value="__pending__")],
+			disabled=True,
 		)
 
 	async def callback(self, interaction: discord.Interaction):
@@ -980,8 +1052,10 @@ class RoundSelect(discord.ui.Select):
 				view.round_no = int(selected)
 			except Exception:
 				view.round_no = None
+			view.opponent_clan = None
 			for opt in self.options:
 				opt.default = (opt.value == selected)
+			view.refresh_opponent_options()
 			await interaction.response.edit_message(view=view)
 			return
 		await interaction.response.defer()
@@ -1001,13 +1075,22 @@ class CreateThreadButton(discord.ui.Button):
 			await interaction.response.send_message("This can only be used in a server.", ephemeral=True)
 			return
 
-		if view.opponent_clan is None or view.round_no is None:
-			await interaction.response.send_message("Select opponent + round first.", ephemeral=True)
+		if view.division is None or view.opponent_clan is None or view.round_no is None:
+			await interaction.response.send_message("Select division, opponent, and round first.", ephemeral=True)
 			return
 
 		requester_clan = view.requester_clan
+		division = view.division
 		opponent_clan = view.opponent_clan
 		round_no = view.round_no
+
+		valid_opponents = _opponents_for_fixture(division, round_no, requester_clan)
+		if opponent_clan not in valid_opponents:
+			await interaction.response.send_message(
+				"That opponent is not scheduled for your clan in the selected division and round.",
+				ephemeral=True,
+			)
+			return
 
 		parent = interaction.guild.get_channel(THREAD_PARENT_CHANNEL_ID)
 		if not isinstance(parent, discord.TextChannel):
@@ -1017,7 +1100,8 @@ class CreateThreadButton(discord.ui.Button):
 		# This operation can take longer than 3 seconds (thread creation + invites), so defer.
 		await interaction.response.defer(ephemeral=True, thinking=True)
 
-		thread_name = f"R{round_no} {requester_clan} vs {opponent_clan}"
+		division_tag = division.replace(" Division", "")
+		thread_name = f"{division_tag} R{round_no} {requester_clan} vs {opponent_clan}"
 		if len(thread_name) > 100:
 			thread_name = thread_name[:97] + "..."
 
@@ -1055,7 +1139,13 @@ class CreateThreadButton(discord.ui.Button):
 				except Exception:
 					continue
 
-		s = FixtureState(thread_id=thread.id, clan_a=requester_clan, clan_b=opponent_clan, round_no=round_no)
+		s = FixtureState(
+			thread_id=thread.id,
+			clan_a=requester_clan,
+			clan_b=opponent_clan,
+			round_no=round_no,
+			division=division,
+		)
 
 		state = _load_state()
 		state["threads"][s.key] = _state_to_dict(s)
@@ -1082,17 +1172,45 @@ class CreateThreadButton(discord.ui.Button):
 
 
 class OpponentRoundView(discord.ui.View):
-	def __init__(self, requester_clan: str):
+	def __init__(self, requester_clan: str, requester_division: str):
 		super().__init__(timeout=300)
 		self.requester_clan = requester_clan
+		self.requester_division = requester_division
+		self.division: Optional[str] = requester_division
 		self.opponent_clan: Optional[str] = None
 		self.round_no: Optional[int] = None
 
-		self.opp_select = OpponentSelect(requester_clan=requester_clan)
+		self.division_select = DivisionSelect(requester_division=requester_division)
+		self.opp_select = OpponentSelect()
 		self.round_select = RoundSelect()
+		self.add_item(self.division_select)
 		self.add_item(self.opp_select)
 		self.add_item(self.round_select)
 		self.add_item(CreateThreadButton())
+		self.refresh_opponent_options()
+
+	def refresh_opponent_options(self) -> None:
+		options: list[discord.SelectOption] = []
+		if self.division and self.round_no is not None:
+			for clan in _opponents_for_fixture(self.division, self.round_no, self.requester_clan):
+				options.append(
+					discord.SelectOption(
+						label=clan,
+						value=clan,
+						default=(clan == self.opponent_clan),
+					)
+				)
+
+		if not options:
+			self.opp_select.options = [
+				discord.SelectOption(label="No scheduled opponent for this round", value="__none__")
+			]
+			self.opp_select.disabled = True
+			self.opponent_clan = None
+			return
+
+		self.opp_select.options = options
+		self.opp_select.disabled = False
 
 	# Selects handle state updates via their callbacks.
 

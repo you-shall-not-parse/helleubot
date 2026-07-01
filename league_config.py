@@ -14,14 +14,16 @@ STREAMER_ROLE_ID: int = 1478166069662191627
 # Active clan roles (name -> role_id)
 # NOTE: BYE is not a Discord role and should not be added here.
 CLAN_ROLE_IDS: dict[str, int] = {
+    "OFIN": 1520125783983653105,
+    "HG": 1517652132541628456,
+    "KRTS": 1518583363953229894,
+    "7CIE": 1520121068600164582,
     "RMC": 1462558256147857408,
     "7DR": 1462383332598743080,
     "7PD": 1464763568506536000,
     "PG60": 1464763651108896778,
-    "ITHL": 1464763753441788117,
     "48th": 1462558355166986261,
     "ZFG": 1476529643128356925,
-    "CROWS": 1464764074985390090,
 }
 
 
@@ -32,14 +34,16 @@ CLAN_ROLE_IDS: dict[str, int] = {
 # If text contains one of these keywords, bots can append the emoji tag after it.
 # Put custom emoji names in Discord short-name format (e.g. ':48th:').
 KEYWORD_EMOJI_TAGS: dict[str, str] = {
-    "RMC": ":RMC:",
-    "48th": ":48th:",
+    "OFIN": ":Only_Finns:",
+    "HG": ":HG:",
+    "KRTS": ":KRTS:",
     "7DR": ":7DR:",
     "7PD": ":7PD:",
-    "ITHL": ":ITHL:",
+    "48th": ":48th:",
     "PG60": ":flag_de:",
+    "RMC": ":RMC:",
+    "7CIE": ":7CIE:",
     "ZFG": ":ZFG:",
-    "CROWS": ":CROWS:", 
 }
 
 
@@ -64,8 +68,17 @@ EMBED_COLOR: int = 0x5865F2
 # Season fixtures (display)
 # =============================
 
-# Display order for schedule embeds.
-CLAN_DISPLAY_ORDER: list[str] = list(CLAN_ROLE_IDS.keys())
+# Divisions for the active season.
+DIVISION_CLANS: dict[str, list[str]] = {
+    "Allied Division": ["OFIN", "HG", "KRTS", "7DR", "RMC"],
+    "Axis Division": ["48th", "7PD", "ZFG", "PG60", "7CIE"],
+}
+
+# Display order for schedule-like surfaces.
+CLAN_DISPLAY_ORDER: list[str] = [
+    *DIVISION_CLANS["Allied Division"],
+    *DIVISION_CLANS["Axis Division"],
+]
 
 # BYE is a display placeholder (not a Discord role).
 BYE_TEAM_NAME: str = "BYE"
@@ -73,13 +86,11 @@ BYE_TEAM_NAME: str = "BYE"
 
 # Round windows (inclusive) for validation and display.
 ROUND_WINDOWS: dict[int, tuple[date, date]] = {
-    1: (date(2026, 3, 2), date(2026, 3, 15)),
-    2: (date(2026, 3, 16), date(2026, 3, 29)),
-    3: (date(2026, 3, 30), date(2026, 4, 12)),
-    4: (date(2026, 4, 13), date(2026, 4, 26)),
-    5: (date(2026, 4, 27), date(2026, 5, 10)),
-    6: (date(2026, 5, 11), date(2026, 5, 24)),
-    7: (date(2026, 5, 25), date(2026, 6, 7)),
+    1: (date(2026, 7, 20), date(2026, 8, 2)),
+    2: (date(2026, 8, 3), date(2026, 8, 16)),
+    3: (date(2026, 8, 17), date(2026, 8, 30)),
+    4: (date(2026, 8, 31), date(2026, 9, 13)),
+    5: (date(2026, 9, 14), date(2026, 9, 27)),
 }
 
 
@@ -102,13 +113,29 @@ def format_round_window(round_no: int) -> str:
     return f"{start_str} - {end_str}"
 
 
+DIVISION_FIXTURES_BY_ROUND: dict[str, dict[int, list[tuple[str, str]]]] = {
+    "Allied Division": {
+        1: [("OFIN", "HG"), ("KRTS", "7DR")],
+        2: [("KRTS", "OFIN"), ("HG", "RMC")],
+        3: [("7DR", "OFIN"), ("KRTS", "RMC")],
+        4: [("OFIN", "RMC"), ("HG", "7DR")],
+        5: [("HG", "KRTS"), ("7DR", "RMC")],
+    },
+    "Axis Division": {
+        1: [("48th", "7PD"), ("ZFG", "PG60")],
+        2: [("ZFG", "48th"), ("7PD", "7CIE")],
+        3: [("PG60", "48th"), ("ZFG", "7CIE")],
+        4: [("7CIE", "48th"), ("7PD", "PG60")],
+        5: [("7PD", "ZFG"), ("PG60", "7CIE")],
+    },
+}
+
+
 FIXTURES_BY_ROUND: dict[int, list[tuple[str, str]]] = {
-    # 8 active clans => 7 rounds (single round-robin). Each team plays each other once.
-    1: [("RMC", "ZFG"), ("7DR", "48th"), ("7PD", "PG60"), ("ITHL", "CROWS")],
-    2: [("RMC", "48th"), ("ZFG", "ITHL"), ("7DR", "PG60"), ("CROWS", "7PD")],
-    3: [("RMC", "PG60"), ("7DR", "ITHL"), ("7PD", "48th"), ("ZFG", "CROWS")],
-    4: [("RMC", "7DR"), ("7PD", "ITHL"), ("PG60", "ZFG"), ("48th", "CROWS")],
-    5: [("RMC", "7PD"), ("7DR", "ZFG"), ("PG60", "CROWS"), ("ITHL", "48th")],
-    6: [("RMC", "ITHL"), ("7DR", "CROWS"), ("7PD", "ZFG"), ("PG60", "48th")],
-    7: [("RMC", "CROWS"), ("7DR", "7PD"), ("PG60", "ITHL"), ("48th", "ZFG")],
+    round_no: [
+        fixture
+        for division in DIVISION_FIXTURES_BY_ROUND.values()
+        for fixture in division.get(round_no, [])
+    ]
+    for round_no in sorted(ROUND_WINDOWS.keys())
 }
