@@ -592,32 +592,35 @@ def _render_operation_draw_final_image(
 		except Exception:
 			return ImageFont.load_default()
 
-	stamp_label = axis.upper()
-	stamp_font = _font(92)
 	summary_font = _font(30)
-	meta_font = _font(26)
-	stamp_color = (150, 38, 28, 230)
-	text_color = (230, 220, 205, 255)
+	meta_font = _font(18)
+	heading_font = _font(27)
+	paper_text_color = (56, 35, 23, 235)
+	preview_text_color = (215, 208, 194, 220)
 
-	stamp_center = (580, 420)
-	draw.rounded_rectangle((420, 318, 742, 520), radius=10, outline=stamp_color, width=7)
-	stamp_bbox = draw.textbbox((0, 0), stamp_label, font=stamp_font)
-	stamp_w = stamp_bbox[2] - stamp_bbox[0]
-	stamp_h = stamp_bbox[3] - stamp_bbox[1]
-	draw.text((stamp_center[0] - stamp_w / 2, stamp_center[1] - stamp_h / 2), stamp_label, font=stamp_font, fill=stamp_color)
+	paper_left = 432
+	paper_top = 338
+	paper_right = 730
 
-	summary_lines = [
-		f"Allies: {allies}",
-		f"Axis: {axis}",
-		f"Host: {host}",
+	lines = [
+		("Allies", allies),
+		("Axis", axis),
+		("Host", host),
 	]
-	if preview:
-		summary_lines.append("Preview only - no fixture updated")
 
-	y = 610
-	for line in summary_lines:
-		draw.text((410, y), line, font=summary_font if not line.startswith("Preview") else meta_font, fill=text_color)
-		y += 42
+	y = paper_top + 92
+	line_gap = 50
+	for label, value in lines:
+		label_text = f"{label}:"
+		label_bbox = draw.textbbox((0, 0), label_text, font=heading_font)
+		value_bbox = draw.textbbox((0, 0), value, font=summary_font)
+		label_w = label_bbox[2] - label_bbox[0]
+		value_w = value_bbox[2] - value_bbox[0]
+		block_w = label_w + 14 + value_w
+		x = paper_left + ((paper_right - paper_left) - block_w) / 2
+		draw.text((x, y), label_text, font=heading_font, fill=paper_text_color)
+		draw.text((x + label_w + 14, y - 2), value, font=summary_font, fill=paper_text_color)
+		y += line_gap
 
 	out_path = data_path(f"operation_draw_final_{thread_id}.png")
 	base.save(out_path, format="PNG")
@@ -640,29 +643,22 @@ def _operation_draw_embed(
 ) -> discord.Embed:
 	title = "OPERATION DRAW" if not final else "OPERATION DRAW COMPLETE"
 	color = discord.Color.from_rgb(181, 129, 53) if not final else discord.Color.from_rgb(201, 86, 45)
-	mode = "Preview" if preview else "Live fixture selection"
 	embed = discord.Embed(title=title, color=color)
-	embed.add_field(name="Stage", value=stage_title, inline=False)
-	embed.add_field(name="Status", value=stage_body, inline=False)
-	embed.add_field(name="Progress", value=_operation_draw_progress(step, total_steps), inline=False)
-	embed.add_field(name="Mode", value=mode, inline=True)
 
 	if final:
-		if allies and axis:
-			embed.add_field(name="Allies", value=allies, inline=True)
-			embed.add_field(name="Axis", value=axis, inline=True)
+		result_lines: list[str] = []
+		if allies:
+			result_lines.append(f"Allies: {allies}")
+		if axis:
+			result_lines.append(f"Axis: {axis}")
 		if host:
-			embed.add_field(name="Server Host", value=host, inline=True)
-		if witnessed_by:
-			embed.add_field(name="Witnessed By", value=witnessed_by, inline=True)
-		embed.add_field(
-			name="Timestamp",
-			value=datetime.now().astimezone().strftime("%d %b %Y, %H:%M (%Z)"),
-			inline=True,
-		)
+			result_lines.append(f"Server host: {host}")
+		if result_lines:
+			embed.add_field(name="Result", value="\n".join(result_lines), inline=False)
 		embed.set_footer(text="Orders sealed. Result has been recorded.")
 	else:
-		embed.set_footer(text="Bot edits this message step by step, then reveals the result.")
+		embed.description = "Draw in progress"
+		embed.set_footer(text="Orders are being processed.")
 	if image_filename:
 		embed.set_image(url=f"attachment://{image_filename}")
 
