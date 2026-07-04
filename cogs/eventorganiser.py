@@ -134,6 +134,22 @@ def _format_round_window(round_no: int) -> str:
 	return f"{start_str} - {end_str}"
 
 
+def _discord_message_url(*, guild_id: int, channel_id: int, message_id: int) -> str:
+	return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+
+
+def _organiser_embed_link() -> str:
+	state = _load_state()
+	msg_id = state.get("organiser_message")
+	if isinstance(msg_id, int) and msg_id > 0:
+		return _discord_message_url(
+			guild_id=GUILD_ID,
+			channel_id=ORGANISER_EMBED_CHANNEL_ID,
+			message_id=msg_id,
+		)
+	return f"https://discord.com/channels/{GUILD_ID}/{ORGANISER_EMBED_CHANNEL_ID}"
+
+
 def _parse_datetime_utc(date_text: str, time_text: str) -> datetime:
 	"""Parse form inputs into an aware UTC datetime.
 
@@ -594,6 +610,47 @@ def _inc_reroll(s: FixtureState, clan: str) -> None:
 		s.reroll_count_b += 1
 
 
+def _possible_sides_outcomes(s: FixtureState) -> list[tuple[str, str, str]]:
+	return [
+		(s.clan_a, s.clan_b, s.clan_a),
+		(s.clan_a, s.clan_b, s.clan_b),
+		(s.clan_b, s.clan_a, s.clan_a),
+		(s.clan_b, s.clan_a, s.clan_b),
+	]
+
+
+def _format_sides_spin_frame(*, allies: str, axis: str, host: str, final: bool = False) -> str:
+	header = "Wheel result locked" if final else "Spinning sides/server wheel..."
+	return (
+		f"**{header}**\n"
+		f"Allies: **{allies}**\n"
+		f"Axis: **{axis}**\n"
+		f"Server host: **{host}**"
+	)
+
+
+async def _animate_sides_spin(
+	channel: discord.abc.Messageable,
+	*,
+	possible: list[tuple[str, str, str]],
+	final_outcome: tuple[str, str, str],
+) -> None:
+	preview_count = min(6, max(3, len(possible)))
+	frames: list[tuple[str, str, str]] = [secrets.choice(possible) for _ in range(preview_count)]
+	frames.append(final_outcome)
+	msg = await channel.send(_format_sides_spin_frame(allies=frames[0][0], axis=frames[0][1], host=frames[0][2]))
+	for idx, (allies, axis, host) in enumerate(frames[1:], start=1):
+		await asyncio.sleep(0.6 if idx < len(frames) - 1 else 0.9)
+		await msg.edit(
+			content=_format_sides_spin_frame(
+				allies=allies,
+				axis=axis,
+				host=host,
+				final=(idx == len(frames) - 1),
+			)
+		)
+
+
 def _sides_reroll_count_for(s: FixtureState, clan: str) -> int:
 	return s.sides_reroll_count_a if clan == s.clan_a else s.sides_reroll_count_b
 
@@ -795,10 +852,12 @@ async def _maybe_send_core_agreement_reminder(client: discord.Client, s: Fixture
 	missing_text = ", ".join(missing)
 	window = _format_round_window(s.round_no)
 	division_line = f"{s.division} - " if s.division else ""
+	organiser_link = _organiser_embed_link()
 	try:
 		await thread.send(
 			f"Weekly reminder for {' and '.join(mentions)}: {division_line}Round {s.round_no} still needs agreement on {missing_text}."
 			+ (f" Round window: {window}." if window else "")
+			+ f" Fixture organiser: {organiser_link}"
 		)
 	except Exception:
 		return False
@@ -1702,15 +1761,21 @@ class FixtureThreadView(discord.ui.View):
 		avoid_host = str(last.get("host")) if isinstance(last, dict) and last.get("host") else None
 		avoid = (avoid_allies, avoid_axis, avoid_host) if (avoid_allies and avoid_axis and avoid_host) else None
 
-		possible: list[tuple[str, str, str]] = [
-			(s.clan_a, s.clan_b, s.clan_a),
-			(s.clan_a, s.clan_b, s.clan_b),
-			(s.clan_b, s.clan_a, s.clan_a),
-			(s.clan_b, s.clan_a, s.clan_b),
-		]
+		possible = _possible_sides_outcomes(s)
 		if avoid is not None and len(possible) > 1:
 			possible = [x for x in possible if x != avoid] or possible
+
+		await interaction.response.defer(ephemeral=True, thinking=True)
 		allies, axis, host = secrets.choice(possible)
+		if interaction.channel is not None:
+			try:
+				await _animate_sides_spin(
+					interaction.channel,
+					possible=possible,
+					final_outcome=(allies, axis, host),
+				)
+			except Exception:
+				pass
 		s.proposed_sides_allies = allies
 		s.proposed_sides_axis = axis
 		s.proposed_sides_by = clan
@@ -1721,7 +1786,7 @@ class FixtureThreadView(discord.ui.View):
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await interaction.response.send_message("Sides proposal updated.", ephemeral=True)
+		await interaction.followup.send("Sides proposal updated.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
 	@discord.ui.button(label="Accept sides", style=discord.ButtonStyle.success, custom_id="fixture:sides_accept")
