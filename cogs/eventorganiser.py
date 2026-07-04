@@ -91,6 +91,7 @@ STATE_PATH = data_path("fixture_organiser_state.json")
 
 OPERATION_DRAW_ASSET_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "operation_draw_assets")
 OPERATION_DRAW_FONT_PATH = os.path.join(os.path.dirname(__file__), "scoreboard_font.ttf")
+OPERATION_DRAW_CACHE_DIR = data_path("operation_draw_cache")
 OPERATION_DRAW_STAGE_FILES: dict[str, str] = {
 	"prepare": "prepare_operational_orders.png.png",
 	"receive": "receiving_orders.png.png",
@@ -572,13 +573,22 @@ def _operation_draw_file(stage_key: str) -> discord.File:
 	return discord.File(path, filename=os.path.basename(path))
 
 
+def _operation_draw_slug(text: str) -> str:
+	return re.sub(r"[^a-z0-9]+", "_", text.strip().lower()).strip("_") or "unknown"
+
+
+def _operation_draw_cached_image_path(*, allies: str, axis: str, host: str) -> str:
+	file_name = f"{_operation_draw_slug(allies)}__{_operation_draw_slug(axis)}__{_operation_draw_slug(host)}.png"
+	return os.path.join(OPERATION_DRAW_CACHE_DIR, file_name)
+
+
 def _render_operation_draw_final_image(
 	*,
-	thread_id: int,
 	allies: str,
 	axis: str,
 	host: str,
 	preview: bool,
+	out_path: Optional[str] = None,
 ) -> str:
 	from PIL import Image, ImageDraw, ImageFont
 
@@ -622,9 +632,48 @@ def _render_operation_draw_final_image(
 		draw.text((x + label_w + 14, y - 2), value, font=summary_font, fill=paper_text_color)
 		y += line_gap
 
-	out_path = data_path(f"operation_draw_final_{thread_id}.png")
-	base.save(out_path, format="PNG")
-	return out_path
+	target_path = out_path or _operation_draw_cached_image_path(allies=allies, axis=axis, host=host)
+	os.makedirs(os.path.dirname(target_path), exist_ok=True)
+	base.save(target_path, format="PNG")
+	return target_path
+
+
+def _ensure_operation_draw_final_image(*, allies: str, axis: str, host: str, preview: bool) -> str:
+	cache_path = _operation_draw_cached_image_path(allies=allies, axis=axis, host=host)
+	if os.path.exists(cache_path):
+		return cache_path
+	return _render_operation_draw_final_image(
+		allies=allies,
+		axis=axis,
+		host=host,
+		preview=preview,
+		out_path=cache_path,
+	)
+
+
+def _prebuild_operation_draw_cache() -> int:
+	if not _operation_draw_assets_ready():
+		return 0
+	os.makedirs(OPERATION_DRAW_CACHE_DIR, exist_ok=True)
+	count = 0
+	clans = sorted(CLAN_ROLE_IDS.keys())
+	for allies in clans:
+		for axis in clans:
+			if axis == allies:
+				continue
+			for host in (allies, axis):
+				cache_path = _operation_draw_cached_image_path(allies=allies, axis=axis, host=host)
+				if os.path.exists(cache_path):
+					continue
+				_render_operation_draw_final_image(
+					allies=allies,
+					axis=axis,
+					host=host,
+					preview=False,
+					out_path=cache_path,
+				)
+				count += 1
+	return count
 
 
 def _operation_draw_embed(
@@ -718,8 +767,7 @@ async def _animate_sides_spin(
 	final_filename: Optional[str] = None
 	if use_image_assets:
 		final_path = await asyncio.to_thread(
-			_render_operation_draw_final_image,
-			thread_id=thread_id,
+			_ensure_operation_draw_final_image,
 			allies=allies,
 			axis=axis,
 			host=host,
@@ -2048,6 +2096,7 @@ class EventOrganiser(commands.Cog):
 	def __init__(self, bot: commands.Bot):
 		self.bot = bot
 		self._lock = asyncio.Lock()
+		self._operation_draw_cache_task: Optional[asyncio.Task] = None
 		bot.add_view(OrganiserHomeView())
 		# Note: thread views are reposted on startup; no need for full persistent registration per-thread.
 		self.cleanup_expired_fixtures.start()
@@ -2095,6 +2144,10 @@ class EventOrganiser(commands.Cog):
 			await _prune_expired_fixture_state(self.bot)
 			await self._ensure_home_embed()
 			await self._repost_thread_controls()
+
+		if _operation_draw_assets_ready():
+			if self._operation_draw_cache_task is None or self._operation_draw_cache_task.done():
+				self._operation_draw_cache_task = asyncio.create_task(asyncio.to_thread(_prebuild_operation_draw_cache))
 
 	async def _ensure_home_embed(self) -> None:
 		channel = self.bot.get_channel(ORGANISER_EMBED_CHANNEL_ID)
