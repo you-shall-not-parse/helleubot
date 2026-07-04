@@ -1046,8 +1046,8 @@ class ScoreboardCog(commands.Cog):
 		# +1 for header row
 		row_h = max(16, int((usable_bottom - usable_top) / (row_count + 1)))
 
-		header_font = _truetype(_clamp(int(row_h * 0.78), 12, 44))
-		row_font = _truetype(_clamp(int(row_h * 0.78), 12, 42))
+		header_font = _truetype(_clamp(int(row_h * 0.52), 10, 28))
+		row_font = _truetype(_clamp(int(row_h * 0.58), 10, 30))
 
 		col_idx = margin + int(w * 0.02)
 		col_name = margin + int(w * 0.12)
@@ -1063,6 +1063,7 @@ class ScoreboardCog(commands.Cog):
 		col_mp = int(numeric_left + segment * 3.5)
 
 		header_y = usable_top
+		first_row_y = header_y + int(row_h * 1.25)
 		# Use anchors so columns align consistently
 		draw.text((col_idx, header_y), "#", font=header_font, fill=text_fill, anchor="la")
 		draw.text((col_name, header_y), "CLAN", font=header_font, fill=text_fill, anchor="la")
@@ -1072,7 +1073,7 @@ class ScoreboardCog(commands.Cog):
 		draw.text((col_mp, header_y), "MP", font=header_font, fill=text_fill, anchor="ma")
 
 		for i, r in enumerate(rows, start=1):
-			y = header_y + row_h * i
+			y = first_row_y + row_h * (i - 1)
 			if y + row_h > usable_bottom + 2:
 				break
 			name = str(r["name"])

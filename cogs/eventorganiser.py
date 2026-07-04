@@ -45,6 +45,7 @@ SCHEDULED_EVENT_CHANNEL_ID: Optional[int] = None
 
 # Remove completed fixtures and their scheduled events some hours after kickoff.
 FIXTURE_RETENTION_AFTER_START = timedelta(hours=8)
+CORE_REMINDER_INTERVAL = timedelta(days=7)
 
 
 
@@ -290,6 +291,7 @@ class FixtureState:
 	# Snapshot of what was agreed at the time of finalisation (so later event edits don't lose the original agreement)
 	agreement_snapshot_message_id: Optional[int] = None
 	agreement_snapshot_text: Optional[str] = None
+	last_core_reminder_at: Optional[str] = None
 
 	@property
 	def key(self) -> str:
@@ -340,6 +342,7 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"streamer_ping_message_id": s.streamer_ping_message_id,
 		"agreement_snapshot_message_id": s.agreement_snapshot_message_id,
 		"agreement_snapshot_text": s.agreement_snapshot_text,
+		"last_core_reminder_at": s.last_core_reminder_at,
 	}
 
 
@@ -387,6 +390,7 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		streamer_ping_message_id=d.get("streamer_ping_message_id"),
 		agreement_snapshot_message_id=d.get("agreement_snapshot_message_id"),
 		agreement_snapshot_text=d.get("agreement_snapshot_text"),
+		last_core_reminder_at=d.get("last_core_reminder_at"),
 	)
 
 
@@ -741,6 +745,69 @@ def _fixture_expired(s: FixtureState, *, now: Optional[datetime] = None) -> bool
 		return False
 	current = now or datetime.now(timezone.utc)
 	return start_dt + FIXTURE_RETENTION_AFTER_START <= current
+
+
+def _missing_core_agreements(s: FixtureState) -> list[str]:
+	missing: list[str] = []
+	if not s.agreed_datetime_utc:
+		missing.append("date/time")
+	if s.agreed_team_size is None:
+		missing.append("team size")
+	if s.agreed_streamer is None:
+		missing.append("streamer")
+	if not missing and ENABLE_SIDES and not _sides_server_agreed(s):
+		missing.append("sides/server")
+	return missing
+
+
+def _core_reminder_due(s: FixtureState, *, now: Optional[datetime] = None) -> bool:
+	if not _missing_core_agreements(s):
+		return False
+	current = now or datetime.now(timezone.utc)
+	if not s.last_core_reminder_at:
+		return True
+	try:
+		last_dt = datetime.fromisoformat(s.last_core_reminder_at)
+		if last_dt.tzinfo is None:
+			last_dt = last_dt.replace(tzinfo=timezone.utc)
+		last_dt = last_dt.astimezone(timezone.utc)
+	except Exception:
+		return True
+	return (current - last_dt) >= CORE_REMINDER_INTERVAL
+
+
+async def _maybe_send_core_agreement_reminder(client: discord.Client, s: FixtureState) -> bool:
+	missing = _missing_core_agreements(s)
+	if not missing or not _core_reminder_due(s):
+		return False
+	thread = await _get_thread_channel(client, s.thread_id)
+	if thread is None:
+		return False
+
+	mentions: list[str] = []
+	if thread.guild is not None:
+		for clan in (s.clan_a, s.clan_b):
+			role = _clan_role(thread.guild, clan)
+			mentions.append(role.mention if role is not None else clan)
+	else:
+		mentions.extend([s.clan_a, s.clan_b])
+
+	missing_text = ", ".join(missing)
+	window = _format_round_window(s.round_no)
+	division_line = f"{s.division} - " if s.division else ""
+	try:
+		await thread.send(
+			f"Weekly reminder for {' and '.join(mentions)}: {division_line}Round {s.round_no} still needs agreement on {missing_text}."
+			+ (f" Round window: {window}." if window else "")
+		)
+	except Exception:
+		return False
+
+	s.last_core_reminder_at = datetime.now(timezone.utc).isoformat()
+	state = _load_state()
+	state.get("threads", {})[s.key] = _state_to_dict(s)
+	_save_state(state)
+	return True
 
 
 async def _prune_expired_fixture_state(bot: commands.Bot) -> None:
@@ -1362,6 +1429,10 @@ class FixtureThreadView(discord.ui.View):
 				self.remove_item(self.accept_sides)
 			except Exception:
 				pass
+		try:
+			self.remove_item(self.create_event)
+		except Exception:
+			pass
 
 	async def _get_state(self) -> Optional[FixtureState]:
 		state = _load_state()
@@ -1798,9 +1869,11 @@ class EventOrganiser(commands.Cog):
 		bot.add_view(OrganiserHomeView())
 		# Note: thread views are reposted on startup; no need for full persistent registration per-thread.
 		self.cleanup_expired_fixtures.start()
+		self.send_fixture_reminders.start()
 
 	def cog_unload(self):
 		self.cleanup_expired_fixtures.cancel()
+		self.send_fixture_reminders.cancel()
 
 	@tasks.loop(minutes=15)
 	async def cleanup_expired_fixtures(self):
@@ -1808,6 +1881,27 @@ class EventOrganiser(commands.Cog):
 
 	@cleanup_expired_fixtures.before_loop
 	async def before_cleanup_expired_fixtures(self):
+		await self.bot.wait_until_ready()
+
+	@tasks.loop(hours=24)
+	async def send_fixture_reminders(self):
+		state = _load_state()
+		threads = state.get("threads", {})
+		if not isinstance(threads, dict):
+			return
+		for raw in list(threads.values()):
+			if not isinstance(raw, dict):
+				continue
+			s = _dict_to_state(raw)
+			if _fixture_expired(s):
+				continue
+			try:
+				await _maybe_send_core_agreement_reminder(self.bot, s)
+			except Exception:
+				continue
+
+	@send_fixture_reminders.before_loop
+	async def before_send_fixture_reminders(self):
 		await self.bot.wait_until_ready()
 
 	@commands.Cog.listener()
@@ -1881,6 +1975,13 @@ class EventOrganiser(commands.Cog):
 				await _refresh_thread(self.bot, thread_id)
 			except Exception:
 				continue
+
+			guild = self.bot.get_guild(SCHEDULED_EVENT_GUILD_ID)
+			if guild is not None:
+				try:
+					await _auto_sync_event(self.bot, guild, thread_id)
+				except Exception:
+					continue
 
 
 async def setup(bot: commands.Bot):

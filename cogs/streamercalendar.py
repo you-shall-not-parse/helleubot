@@ -372,26 +372,7 @@ def _board_embed(
 	state: dict[str, Any],
 	max_lines: int = 12,
 ) -> discord.Embed:
-	requests = state.get("requests", {})
-
-	items: list[tuple[datetime, str, dict[str, Any]]] = []
-	if isinstance(requests, dict):
-		for rid, raw in requests.items():
-			if not isinstance(raw, dict):
-				continue
-			dt_sort = datetime.min.replace(tzinfo=timezone.utc)
-			try:
-				dt_raw = raw.get("datetime_utc")
-				if isinstance(dt_raw, str) and dt_raw:
-					dt_sort = datetime.fromisoformat(dt_raw)
-					if dt_sort.tzinfo is None:
-						dt_sort = dt_sort.replace(tzinfo=timezone.utc)
-					dt_sort = dt_sort.astimezone(timezone.utc)
-			except Exception:
-				pass
-			items.append((dt_sort, str(rid), raw))
-	# Order by date ascending (earliest first)
-	items.sort(key=lambda x: x[0])
+	items = _sorted_request_items(state)
 
 	accepted_lines: list[str] = []
 	unaccepted_lines: list[str] = []
@@ -450,7 +431,7 @@ async def _refresh_streamer_board(
 	)
 	if board_msg is None:
 		try:
-			new_msg = await calendar_channel.send(embed=embed)
+			new_msg = await calendar_channel.send(embed=embed, view=StreamerBoardView(state))
 			state["board_message_id"] = new_msg.id
 			_save_streamer_state(state)
 			board_msg = new_msg
@@ -458,7 +439,7 @@ async def _refresh_streamer_board(
 			return
 	else:
 		try:
-			await board_msg.edit(embed=embed)
+			await board_msg.edit(embed=embed, view=StreamerBoardView(state))
 		except Exception:
 			pass
 
@@ -483,6 +464,181 @@ def _find_request_by_message_id(state: dict[str, Any], message_id: int) -> Optio
 		if entry.get("request_message_id") == message_id:
 			return str(rid), entry
 	return None
+
+
+def _is_streamer_member(member: discord.Member) -> bool:
+	if member.guild_permissions.administrator:
+		return True
+	if not isinstance(STREAMER_ROLE_ID, int) or STREAMER_ROLE_ID <= 0:
+		return False
+	return any(role.id == STREAMER_ROLE_ID for role in member.roles)
+
+
+def _sorted_request_items(state: dict[str, Any]) -> list[tuple[datetime, str, dict[str, Any]]]:
+	requests = state.get("requests", {})
+	items: list[tuple[datetime, str, dict[str, Any]]] = []
+	if not isinstance(requests, dict):
+		return items
+	for rid, raw in requests.items():
+		if not isinstance(raw, dict):
+			continue
+		dt_sort = datetime.max.replace(tzinfo=timezone.utc)
+		try:
+			dt_raw = raw.get("datetime_utc")
+			if isinstance(dt_raw, str) and dt_raw:
+				dt_sort = datetime.fromisoformat(dt_raw)
+				if dt_sort.tzinfo is None:
+					dt_sort = dt_sort.replace(tzinfo=timezone.utc)
+				dt_sort = dt_sort.astimezone(timezone.utc)
+		except Exception:
+			pass
+		items.append((dt_sort, str(rid), raw))
+	items.sort(key=lambda x: x[0])
+	return items
+
+
+def _apply_request_action(state: dict[str, Any], *, request_id: str, user_id: int, action: str) -> Optional[dict[str, Any]]:
+	requests = state.get("requests", {})
+	if not isinstance(requests, dict):
+		return None
+	entry = requests.get(request_id)
+	if not isinstance(entry, dict):
+		return None
+
+	accepted_by = entry.get("accepted_by") if isinstance(entry.get("accepted_by"), list) else []
+	rejected_by = entry.get("rejected_by") if isinstance(entry.get("rejected_by"), list) else []
+	accepted_by = [x for x in accepted_by if isinstance(x, int)]
+	rejected_by = [x for x in rejected_by if isinstance(x, int)]
+
+	if action == "accept":
+		accepted_by.append(user_id)
+		rejected_by = [x for x in rejected_by if x != user_id]
+	elif action == "reject":
+		rejected_by.append(user_id)
+		accepted_by = [x for x in accepted_by if x != user_id]
+	elif action == "remove":
+		accepted_by = [x for x in accepted_by if x != user_id]
+		rejected_by = [x for x in rejected_by if x != user_id]
+	else:
+		return None
+
+	entry["accepted_by"] = _dedupe_ints(accepted_by)
+	entry["rejected_by"] = _dedupe_ints(rejected_by)
+	requests[request_id] = entry
+	state["requests"] = requests
+	return entry
+
+
+async def _refresh_streamer_surfaces(bot: commands.Bot, guild: discord.Guild) -> None:
+	cal = guild.get_channel(STREAMER_CALENDAR_CHANNEL_ID)
+	if isinstance(cal, discord.TextChannel):
+		await _refresh_streamer_board(bot, guild, cal)
+
+
+async def _refresh_request_message(bot: commands.Bot, guild: discord.Guild, entry: dict[str, Any]) -> None:
+	if not (isinstance(STREAMER_REQUESTS_CHANNEL_ID, int) and STREAMER_REQUESTS_CHANNEL_ID > 0):
+		return
+	requests_channel = guild.get_channel(STREAMER_REQUESTS_CHANNEL_ID)
+	if not isinstance(requests_channel, discord.TextChannel):
+		return
+	msg_id = entry.get("request_message_id")
+	if not isinstance(msg_id, int) or msg_id <= 0:
+		return
+	try:
+		msg = await requests_channel.fetch_message(msg_id)
+		await msg.edit(embed=_request_embed_from_entry(entry), view=StreamerRequestActionsView(bot))
+	except Exception:
+		return
+
+
+class StreamerBoardRequestSelect(discord.ui.Select):
+	def __init__(self, state: dict[str, Any], *, action: str):
+		self.action = action
+		options: list[discord.SelectOption] = []
+		for _, rid, raw in _sorted_request_items(state):
+			accepted_by = raw.get("accepted_by") if isinstance(raw.get("accepted_by"), list) else []
+			rejected_by = raw.get("rejected_by") if isinstance(raw.get("rejected_by"), list) else []
+			if action == "accept" and accepted_by:
+				continue
+			if action == "reject" and rejected_by:
+				continue
+			if action == "remove" and not accepted_by and not rejected_by:
+				continue
+			label = _request_fixture_line(
+				clan_a=str(raw.get("clan_a", "?")),
+				clan_b=str(raw.get("clan_b", "?")),
+				dt_iso=raw.get("datetime_utc") if isinstance(raw.get("datetime_utc"), str) else None,
+			)
+			options.append(discord.SelectOption(label=label[:100], value=rid))
+			if len(options) >= 25:
+				break
+
+		if not options:
+			if action == "accept":
+				label = "No outstanding requests"
+			elif action == "reject":
+				label = "No requests available to reject"
+			else:
+				label = "No streamer choices to remove"
+			options = [discord.SelectOption(label=label, value="__none__")]
+			disabled = True
+		else:
+			disabled = False
+
+		placeholder_map = {
+			"accept": "Accept an outstanding stream request",
+			"reject": "Reject a stream request",
+			"remove": "Remove your stream choice",
+		}
+
+		super().__init__(
+			placeholder=placeholder_map.get(action, "Select a stream request"),
+			min_values=1,
+			max_values=1,
+			options=options,
+			disabled=disabled,
+			custom_id=f"streamboard:{action}_select",
+		)
+
+	async def callback(self, interaction: discord.Interaction):
+		if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+			await interaction.response.send_message("Server only.", ephemeral=True)
+			return
+		if not _is_streamer_member(interaction.user):
+			await interaction.response.send_message("You do not have permission to manage streamer requests.", ephemeral=True)
+			return
+		if not self.values or self.values[0] == "__none__":
+			await interaction.response.send_message("There are no matching requests for that action.", ephemeral=True)
+			return
+
+		request_id = self.values[0]
+		state = _load_streamer_state()
+		if _normalize_streamer_requests(state):
+			_save_streamer_state(state)
+		entry = _apply_request_action(state, request_id=request_id, user_id=interaction.user.id, action=self.action)
+		if entry is None:
+			await interaction.response.send_message("That request is no longer available.", ephemeral=True)
+			return
+		_save_streamer_state(state)
+
+		await interaction.response.defer(ephemeral=True, thinking=False)
+		await _refresh_request_message(interaction.client, interaction.guild, entry)
+		if isinstance(interaction.client, commands.Bot):
+			await _refresh_streamer_surfaces(interaction.client, interaction.guild)
+		message_map = {
+			"accept": "Accepted from the streamer board.",
+			"reject": "Rejected from the streamer board.",
+			"remove": "Removed your choice from the streamer board.",
+		}
+		await interaction.followup.send(message_map.get(self.action, "Updated from the streamer board."), ephemeral=True)
+
+
+class StreamerBoardView(discord.ui.View):
+	def __init__(self, state: dict[str, Any]):
+		super().__init__(timeout=None)
+		self.add_item(StreamerBoardRequestSelect(state, action="accept"))
+		self.add_item(StreamerBoardRequestSelect(state, action="reject"))
+		self.add_item(StreamerBoardRequestSelect(state, action="remove"))
 
 
 class StreamerRequestActionsView(discord.ui.View):
@@ -510,44 +666,16 @@ class StreamerRequestActionsView(discord.ui.View):
 			await interaction.response.send_message("This request is not tracked (state missing).", ephemeral=True)
 			return
 		rid, entry = hit
-
-		accepted_by = entry.get("accepted_by") if isinstance(entry.get("accepted_by"), list) else []
-		rejected_by = entry.get("rejected_by") if isinstance(entry.get("rejected_by"), list) else []
-		uid = interaction.user.id
-		accepted_by = [x for x in accepted_by if isinstance(x, int)]
-		rejected_by = [x for x in rejected_by if isinstance(x, int)]
-
-		if action == "accept":
-			accepted_by.append(uid)
-			rejected_by = [x for x in rejected_by if x != uid]
-		elif action == "reject":
-			rejected_by.append(uid)
-			accepted_by = [x for x in accepted_by if x != uid]
-		elif action == "remove":
-			accepted_by = [x for x in accepted_by if x != uid]
-			rejected_by = [x for x in rejected_by if x != uid]
-		else:
+		entry = _apply_request_action(state, request_id=rid, user_id=interaction.user.id, action=action)
+		if entry is None:
 			await interaction.response.send_message("Unknown action.", ephemeral=True)
 			return
-
-		entry["accepted_by"] = _dedupe_ints(accepted_by)
-		entry["rejected_by"] = _dedupe_ints(rejected_by)
-		state["requests"][rid] = entry  # type: ignore[index]
 		_save_streamer_state(state)
 
 		await interaction.response.defer(ephemeral=True, thinking=False)
-		# Update the request embed.
+		await _refresh_request_message(self.bot, interaction.guild, entry)
 		try:
-			await interaction.message.edit(embed=_request_embed_from_entry(entry), view=StreamerRequestActionsView(self.bot))
-		except Exception:
-			pass
-
-		# Refresh the calendar board.
-		try:
-			if isinstance(STREAMER_CALENDAR_CHANNEL_ID, int) and STREAMER_CALENDAR_CHANNEL_ID > 0:
-				cal = interaction.guild.get_channel(STREAMER_CALENDAR_CHANNEL_ID)
-				if isinstance(cal, discord.TextChannel):
-					await _refresh_streamer_board(self.bot, interaction.guild, cal)
+			await _refresh_streamer_surfaces(self.bot, interaction.guild)
 		except Exception:
 			pass
 
