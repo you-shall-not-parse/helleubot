@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import os
 import random
 import secrets
@@ -9,6 +10,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 
@@ -619,36 +621,172 @@ def _possible_sides_outcomes(s: FixtureState) -> list[tuple[str, str, str]]:
 	]
 
 
-def _format_sides_spin_frame(*, allies: str, axis: str, host: str, final: bool = False) -> str:
-	header = "Wheel result locked" if final else "Spinning sides/server wheel..."
+def _format_sides_result(*, allies: str, axis: str, host: str) -> str:
 	return (
-		f"**{header}**\n"
+		"**Wheel result locked**\n"
 		f"Allies: **{allies}**\n"
 		f"Axis: **{axis}**\n"
 		f"Server host: **{host}**"
 	)
 
 
+def _build_sides_label(*, allies: str, axis: str, host: str) -> str:
+	return f"A {allies}\nX {axis}\nH {host}"
+
+
+def _render_sides_spin_gif(
+	*,
+	thread_id: int,
+	possible: list[tuple[str, str, str]],
+	final_outcome: tuple[str, str, str],
+) -> str:
+	from PIL import Image, ImageDraw, ImageFont
+
+	image_size = 520
+	center = image_size // 2
+	wheel_radius = 190
+	pointer_y = center - wheel_radius - 10
+	background = (18, 20, 27)
+	colors = [
+		(212, 68, 87),
+		(43, 108, 176),
+		(47, 133, 90),
+		(221, 107, 32),
+	]
+	text_color = (245, 245, 245)
+	outline_color = (255, 255, 255)
+	start_angle = -90.0
+	slice_angle = 360.0 / max(1, len(possible))
+	font = ImageFont.load_default()
+
+	base = Image.new("RGBA", (image_size, image_size), (0, 0, 0, 0))
+	draw = ImageDraw.Draw(base)
+	bbox = [center - wheel_radius, center - wheel_radius, center + wheel_radius, center + wheel_radius]
+
+	for idx, (allies, axis, host) in enumerate(possible):
+		slice_start = start_angle + (slice_angle * idx)
+		slice_end = slice_start + slice_angle
+		draw.pieslice(bbox, start=slice_start, end=slice_end, fill=colors[idx % len(colors)], outline=outline_color, width=3)
+		mid_angle = math.radians(slice_start + (slice_angle / 2.0))
+		text_radius = wheel_radius * 0.58
+		text_x = center + math.cos(mid_angle) * text_radius
+		text_y = center + math.sin(mid_angle) * text_radius
+		label = _build_sides_label(allies=allies, axis=axis, host=host)
+		text_bbox = draw.multiline_textbbox((0, 0), label, font=font, spacing=2, align="center")
+		text_w = text_bbox[2] - text_bbox[0]
+		text_h = text_bbox[3] - text_bbox[1]
+		draw.multiline_text(
+			(text_x - (text_w / 2), text_y - (text_h / 2)),
+			label,
+			font=font,
+			fill=text_color,
+			spacing=2,
+			align="center",
+		)
+
+	draw.ellipse(bbox, outline=outline_color, width=4)
+	draw.ellipse(
+		(center - 18, center - 18, center + 18, center + 18),
+		fill=(35, 35, 35),
+		outline=outline_color,
+		width=3,
+	)
+
+	target_idx = possible.index(final_outcome)
+	target_center = start_angle + (slice_angle * target_idx) + (slice_angle / 2.0)
+	final_rotation = (-90.0 - target_center) + (360.0 * 5)
+	frame_count = 22
+	frames: list[Image.Image] = []
+	durations: list[int] = []
+
+	for frame_idx in range(frame_count):
+		progress = frame_idx / max(1, frame_count - 1)
+		eased = 1.0 - ((1.0 - progress) ** 3)
+		rotation = final_rotation * eased
+		frame = Image.new("RGBA", (image_size, image_size), background + (255,))
+		rotated = base.rotate(rotation, resample=Image.Resampling.BICUBIC)
+		frame.alpha_composite(rotated)
+		frame_draw = ImageDraw.Draw(frame)
+		frame_draw.polygon(
+			[(center, pointer_y), (center - 18, pointer_y - 30), (center + 18, pointer_y - 30)],
+			fill=(255, 230, 120),
+			outline=(20, 20, 20),
+		)
+		status = "SPINNING..." if frame_idx < frame_count - 1 else "RESULT LOCKED"
+		status_bbox = frame_draw.textbbox((0, 0), status, font=font)
+		status_w = status_bbox[2] - status_bbox[0]
+		frame_draw.text(((image_size - status_w) / 2, 18), status, font=font, fill=text_color)
+		frames.append(frame.convert("P", palette=Image.Palette.ADAPTIVE))
+		durations.append(55 + int(progress * 85))
+
+	out_path = data_path(f"sides_spin_{thread_id}.gif")
+	frames[0].save(
+		out_path,
+		save_all=True,
+		append_images=frames[1:],
+		duration=durations,
+		loop=0,
+		disposal=2,
+	)
+	return out_path
+
+
 async def _animate_sides_spin(
 	channel: discord.abc.Messageable,
 	*,
+	thread_id: int,
 	possible: list[tuple[str, str, str]],
 	final_outcome: tuple[str, str, str],
 ) -> None:
-	preview_count = min(6, max(3, len(possible)))
-	frames: list[tuple[str, str, str]] = [secrets.choice(possible) for _ in range(preview_count)]
-	frames.append(final_outcome)
-	msg = await channel.send(_format_sides_spin_frame(allies=frames[0][0], axis=frames[0][1], host=frames[0][2]))
-	for idx, (allies, axis, host) in enumerate(frames[1:], start=1):
-		await asyncio.sleep(0.6 if idx < len(frames) - 1 else 0.9)
-		await msg.edit(
-			content=_format_sides_spin_frame(
-				allies=allies,
-				axis=axis,
-				host=host,
-				final=(idx == len(frames) - 1),
-			)
+	allies, axis, host = final_outcome
+	try:
+		gif_path = await asyncio.to_thread(
+			_render_sides_spin_gif,
+			thread_id=thread_id,
+			possible=possible,
+			final_outcome=final_outcome,
 		)
+		file = discord.File(gif_path, filename=os.path.basename(gif_path))
+		await channel.send(content=_format_sides_result(allies=allies, axis=axis, host=host), file=file)
+	except Exception:
+		await channel.send(content=_format_sides_result(allies=allies, axis=axis, host=host))
+
+
+async def _lock_sides_from_wheel(
+	interaction: discord.Interaction,
+	*,
+	s: FixtureState,
+	clan: str,
+) -> None:
+	possible = _possible_sides_outcomes(s)
+
+	await interaction.response.defer(ephemeral=True, thinking=True)
+	allies, axis, host = secrets.choice(possible)
+	if interaction.channel is not None:
+		try:
+			await _animate_sides_spin(
+				interaction.channel,
+				thread_id=s.thread_id,
+				possible=possible,
+				final_outcome=(allies, axis, host),
+			)
+		except Exception:
+			pass
+	s.sides_allies = allies
+	s.sides_axis = axis
+	s.server_host = host
+	s.sides_decided_by = clan
+	s.proposed_sides_allies = None
+	s.proposed_sides_axis = None
+	s.proposed_sides_by = None
+	s.proposed_server_host = None
+	s.sides_history.append({"by": clan, "action": "locked", "allies": allies, "axis": axis, "host": host})
+	st = _load_state()
+	st["threads"][s.key] = _state_to_dict(s)
+	_save_state(st)
+	await interaction.followup.send("Sides/server locked from the wheel spin.", ephemeral=True)
+	asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+	asyncio.create_task(_auto_sync_event(interaction.client, interaction.guild, s.thread_id))
 
 
 def _sides_reroll_count_for(s: FixtureState, clan: str) -> int:
@@ -1752,35 +1890,7 @@ class FixtureThreadView(discord.ui.View):
 		if s.sides_allies or s.sides_axis:
 			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
 			return
-
-		possible = _possible_sides_outcomes(s)
-
-		await interaction.response.defer(ephemeral=True, thinking=True)
-		allies, axis, host = secrets.choice(possible)
-		if interaction.channel is not None:
-			try:
-				await _animate_sides_spin(
-					interaction.channel,
-					possible=possible,
-					final_outcome=(allies, axis, host),
-				)
-			except Exception:
-				pass
-		s.sides_allies = allies
-		s.sides_axis = axis
-		s.server_host = host
-		s.sides_decided_by = clan
-		s.proposed_sides_allies = None
-		s.proposed_sides_axis = None
-		s.proposed_sides_by = None
-		s.proposed_server_host = None
-		s.sides_history.append({"by": clan, "action": "locked", "allies": allies, "axis": axis, "host": host})
-		st = _load_state()
-		st["threads"][s.key] = _state_to_dict(s)
-		_save_state(st)
-		await interaction.followup.send("Sides/server locked from the wheel spin.", ephemeral=True)
-		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
-		asyncio.create_task(_auto_sync_event(interaction.client, interaction.guild, s.thread_id))
+		await _lock_sides_from_wheel(interaction, s=s, clan=clan)
 
 	@discord.ui.button(label="Accept sides", style=discord.ButtonStyle.success, custom_id="fixture:sides_accept")
 	async def accept_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2040,6 +2150,48 @@ class EventOrganiser(commands.Cog):
 					await _auto_sync_event(self.bot, guild, thread_id)
 				except Exception:
 					continue
+
+	@app_commands.guilds(discord.Object(id=GUILD_ID))
+	@app_commands.guild_only()
+	@app_commands.command(name="wheelspin", description="Spin the sides/server wheel for the current fixture thread")
+	@app_commands.describe(thread="Optional fixture thread to spin for; admins only when running outside the thread")
+	async def wheelspin(self, interaction: discord.Interaction, thread: Optional[discord.Thread] = None):
+		if not ENABLE_SIDES:
+			await interaction.response.send_message("Sides is disabled by config.", ephemeral=True)
+			return
+		if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+			await interaction.response.send_message("Server only.", ephemeral=True)
+			return
+		is_admin = interaction.user.guild_permissions.administrator
+		target_thread = thread
+		if target_thread is None:
+			channel = interaction.channel
+			if not isinstance(channel, discord.Thread):
+				await interaction.response.send_message("Use this command inside a fixture thread, or provide a thread as an admin.", ephemeral=True)
+				return
+			target_thread = channel
+		elif not is_admin:
+			await interaction.response.send_message("Only administrators can target a fixture thread explicitly.", ephemeral=True)
+			return
+
+		state = _load_state()
+		raw = state.get("threads", {}).get(str(target_thread.id))
+		if not isinstance(raw, dict):
+			await interaction.response.send_message("This thread is not a tracked fixture thread.", ephemeral=True)
+			return
+
+		s = _dict_to_state(raw)
+		clan = _find_user_clan(interaction.user)
+		if clan not in (s.clan_a, s.clan_b):
+			if not is_admin:
+				await interaction.response.send_message("You are not part of this fixture.", ephemeral=True)
+				return
+			clan = interaction.user.display_name or interaction.user.name or "Admin"
+		if s.sides_allies or s.sides_axis:
+			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
+			return
+
+		await _lock_sides_from_wheel(interaction, s=s, clan=clan)
 
 
 async def setup(bot: commands.Bot):
