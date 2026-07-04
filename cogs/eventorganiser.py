@@ -304,10 +304,6 @@ class FixtureState:
 
 	scheduled_event_id: Optional[int] = None
 	streamer_ping_message_id: Optional[int] = None
-
-	# Snapshot of what was agreed at the time of finalisation (so later event edits don't lose the original agreement)
-	agreement_snapshot_message_id: Optional[int] = None
-	agreement_snapshot_text: Optional[str] = None
 	last_core_reminder_at: Optional[str] = None
 
 	@property
@@ -357,8 +353,6 @@ def _state_to_dict(s: FixtureState) -> dict[str, Any]:
 		"server_host": s.server_host,
 		"scheduled_event_id": s.scheduled_event_id,
 		"streamer_ping_message_id": s.streamer_ping_message_id,
-		"agreement_snapshot_message_id": s.agreement_snapshot_message_id,
-		"agreement_snapshot_text": s.agreement_snapshot_text,
 		"last_core_reminder_at": s.last_core_reminder_at,
 	}
 
@@ -405,8 +399,6 @@ def _dict_to_state(d: dict[str, Any]) -> FixtureState:
 		server_host=d.get("server_host"),
 		scheduled_event_id=d.get("scheduled_event_id"),
 		streamer_ping_message_id=d.get("streamer_ping_message_id"),
-		agreement_snapshot_message_id=d.get("agreement_snapshot_message_id"),
-		agreement_snapshot_text=d.get("agreement_snapshot_text"),
 		last_core_reminder_at=d.get("last_core_reminder_at"),
 	)
 
@@ -453,25 +445,6 @@ async def _maybe_notify_streamer(
 	except Exception:
 		return
 
-
-async def _maybe_post_agreement_snapshot(client: discord.Client, s: FixtureState, ev: discord.ScheduledEvent) -> None:
-	# Only snapshot when the fixture is effectively "final" for the info users care about.
-	if s.agreement_snapshot_message_id:
-		return
-	if ENABLE_SIDES and not _sides_server_agreed(s):
-		return
-	thread = await _get_thread_channel(client, s.thread_id)
-	if thread is None:
-		return
-	try:
-		snapshot_text = _agreement_snapshot_text(s, event_url=ev.url)
-		msg = await thread.send(snapshot_text)
-		s.agreement_snapshot_message_id = msg.id
-		s.agreement_snapshot_text = snapshot_text
-	except Exception:
-		return
-
-
 async def _auto_sync_event(client: discord.Client, guild: Optional[discord.Guild], thread_id: int) -> None:
 	"""Background task: create/update the scheduled event when state changes."""
 	if guild is None:
@@ -498,59 +471,9 @@ async def _auto_sync_event(client: discord.Client, guild: Optional[discord.Guild
 	if ev is None:
 		return
 
-	# Best-effort notifications.
-	await _maybe_post_agreement_snapshot(client, s, ev)
-
 	state["threads"][s.key] = _state_to_dict(s)
 	_save_state(state)
 	asyncio.create_task(_refresh_thread(client, s.thread_id))
-
-
-def _agreement_snapshot_text(s: FixtureState, *, event_url: Optional[str] = None) -> str:
-	parts: list[str] = []
-	parts.append("AGREEMENT SNAPSHOT (do not edit)")
-	if s.division:
-		parts.append(f"Division: {s.division}")
-	parts.append(f"Fixture: {s.clan_a} vs {s.clan_b}")
-	parts.append(f"Round: {s.round_no} ({_format_round_window(s.round_no)})")
-	if s.agreed_datetime_utc:
-		try:
-			dt = datetime.fromisoformat(s.agreed_datetime_utc)
-			if dt.tzinfo is None:
-				dt = dt.replace(tzinfo=timezone.utc)
-			dt = dt.astimezone(timezone.utc)
-			parts.append(f"Start (UTC): {dt.strftime('%d/%m/%Y %H:%M')} UTC")
-			parts.append(f"Start (Discord): <t:{int(dt.timestamp())}:F>")
-		except Exception:
-			parts.append(f"Start (UTC): {s.agreed_datetime_utc}")
-	if s.agreed_team_size:
-		parts.append(f"Team size: {s.agreed_team_size} vs {s.agreed_team_size}")
-	if s.agreed_streamer is not None:
-		parts.append(f"Streamer: {'Yes' if s.agreed_streamer else 'No'}")
-	if ENABLE_MAP_MIDPOINT:
-		if s.current_map:
-			parts.append(f"Map: {s.current_map}")
-		if s.current_midpoint:
-			parts.append(f"Midpoint: {s.current_midpoint}")
-		parts.append(
-			f"Map rerolls used: {s.clan_a} {s.reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.reroll_count_b}/{REROLL_LIMIT}"
-		)
-	if ENABLE_SIDES:
-		if s.sides_allies and s.sides_axis:
-			parts.append(f"Allies: {s.sides_allies}")
-			parts.append(f"Axis: {s.sides_axis}")
-		if s.server_host:
-			parts.append(f"Server host: {s.server_host} Server")
-		parts.append(
-			f"Sides rerolls used: {s.clan_a} {s.sides_reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.sides_reroll_count_b}/{REROLL_LIMIT}"
-		)
-	parts.append(f"Thread: <#{s.thread_id}>")
-	if event_url:
-		parts.append(f"Event: {event_url}")
-	parts.append(f"Snapshot saved (UTC): {datetime.now(timezone.utc).isoformat()}")
-
-	# Keep it readable and scannable.
-	return "**" + parts[0] + "**\n```\n" + "\n".join(parts[1:]) + "\n```"
 
 
 def _find_user_clan(member: discord.Member) -> Optional[str]:
@@ -1958,9 +1881,8 @@ class FixtureThreadView(discord.ui.View):
 			await interaction.followup.send("Failed to create/update the event (check permissions/config).", ephemeral=True)
 			return
 
-		# Best-effort: ping streamer role and/or post snapshot when appropriate.
+		# Best-effort: keep streamer request state in sync.
 		await _maybe_notify_streamer(interaction.client, s, ev, guild=interaction.guild)
-		await _maybe_post_agreement_snapshot(interaction.client, s, ev)
 
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)

@@ -118,6 +118,14 @@ def _division_for_clan_name(clan_name: str) -> Optional[str]:
 	return None
 
 
+def _division_for_role_id(role_id: int) -> Optional[str]:
+	return _division_for_clan_name(_role_name_from_id(role_id))
+
+
+def _division_choices() -> list[app_commands.Choice[str]]:
+	return [app_commands.Choice(name=division, value=division) for division in DIVISION_CLANS.keys()]
+
+
 def _stats_for_division(stats: dict[str, Any], division: str) -> dict[str, Any]:
 	allowed = set(DIVISION_CLANS.get(division, []))
 	filtered: dict[str, Any] = {}
@@ -471,9 +479,13 @@ def _member_clan_role_id(member: discord.Member) -> Optional[int]:
 
 class OpponentSelect(discord.ui.Select):
 	def __init__(self, submitter_clan_role_id: int):
+		submitter_division = _division_for_role_id(submitter_clan_role_id)
+		allowed_clans = set(DIVISION_CLANS.get(submitter_division or "", []))
 		options = []
 		for clan_name, role_id in CLAN_ROLES.items():
 			if role_id == submitter_clan_role_id:
+				continue
+			if allowed_clans and clan_name not in allowed_clans:
 				continue
 			options.append(discord.SelectOption(label=clan_name, value=str(role_id)))
 		super().__init__(
@@ -666,10 +678,17 @@ class ScoreboardMainView(discord.ui.View):
 				ephemeral=True,
 			)
 			return
+		division = _division_for_role_id(clan_role_id)
+		if not division:
+			await interaction.response.send_message("Your clan is not assigned to an active division.", ephemeral=True)
+			return
 
 		embed = discord.Embed(
 			title="Submit a result",
-			description="Select the opposing clan and score, then click **Submit Result**.",
+			description=(
+				f"Division: **{division}**\n"
+				"Select an opposing clan from your division and a score, then click **Submit Result**."
+			),
 			colour=discord.Colour.blurple(),
 		)
 		await interaction.response.send_message(
@@ -1041,10 +1060,11 @@ class ScoreboardCog(commands.Cog):
 		# Leaderboard table (auto-fit all teams)
 		rows = _sorted_leaderboard_rows(_stats_for_division(self.store.data.get("clan_stats", {}), division))
 		row_count = max(1, len(rows))
-		usable_top = table_top + int(h * 0.06)
-		usable_bottom = table_bottom - int(h * 0.03)
-		# +1 for header row
-		row_h = max(16, int((usable_bottom - usable_top) / (row_count + 1)))
+		usable_top = table_top + int(h * 0.045)
+		usable_bottom = table_bottom - int(h * 0.015)
+		header_gap = max(14, int(h * 0.022))
+		available_for_rows = max(16, usable_bottom - usable_top - header_gap)
+		row_h = max(16, int(available_for_rows / row_count))
 
 		header_font = _truetype(_clamp(int(row_h * 0.52), 10, 28))
 		row_font = _truetype(_clamp(int(row_h * 0.58), 10, 30))
@@ -1063,7 +1083,7 @@ class ScoreboardCog(commands.Cog):
 		col_mp = int(numeric_left + segment * 3.5)
 
 		header_y = usable_top
-		first_row_y = header_y + int(row_h * 1.25)
+		first_row_y = header_y + header_gap
 		# Use anchors so columns align consistently
 		draw.text((col_idx, header_y), "#", font=header_font, fill=text_fill, anchor="la")
 		draw.text((col_name, header_y), "CLAN", font=header_font, fill=text_fill, anchor="la")
@@ -1220,13 +1240,35 @@ class ScoreboardCog(commands.Cog):
 			return False
 		return _is_admin_member(interaction.user)
 
+	def _clear_division_stats(self, division: str) -> None:
+		stats: dict[str, Any] = self.store.data.setdefault("clan_stats", {})
+		for clan_name in DIVISION_CLANS.get(division, []):
+			role_id = CLAN_ROLES.get(clan_name)
+			if not isinstance(role_id, int):
+				continue
+			stats[str(role_id)] = {
+				"name": clan_name,
+				"w": 0,
+				"l": 0,
+				"played": 0,
+				"maps_for": 0,
+				"maps_against": 0,
+			}
+		last = self.store.data.get("last_result")
+		if isinstance(last, dict):
+			last_division = _division_for_clan_name(str(last.get("a_name") or ""))
+			if last_division == division:
+				self.store.data["last_result"] = None
+
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
-	@app_commands.command(name="scoreboard_admin_edit_clan", description="Admin: edit a clan's leaderboard values")
+	@app_commands.command(name="scoreboard_division_edit_clan", description="Admin: edit one clan in a selected division leaderboard")
+	@app_commands.choices(division=_division_choices())
 	@app_commands.check(_admin_app_command_check)
 	async def scoreboard_admin_edit_clan(
 		self,
 		interaction: discord.Interaction,
+		division: app_commands.Choice[str],
 		clan_role: discord.Role,
 		score: int,
 		wins: int,
@@ -1235,6 +1277,9 @@ class ScoreboardCog(commands.Cog):
 		await interaction.response.defer(ephemeral=True)
 		if clan_role.id not in set(CLAN_ROLES.values()):
 			await interaction.followup.send("That role is not a configured clan role.", ephemeral=True)
+			return
+		if _division_for_role_id(clan_role.id) != division.value:
+			await interaction.followup.send("That clan does not belong to the selected division.", ephemeral=True)
 			return
 		if score < 0 or wins < 0 or losses < 0:
 			await interaction.followup.send("Score/Wins/Losses must be non-negative.", ephemeral=True)
@@ -1254,7 +1299,7 @@ class ScoreboardCog(commands.Cog):
 		self.store.data["clan_stats"] = stats
 		await self.store.save()
 		await self.ensure_leaderboard_message()
-		await interaction.followup.send(f"Updated {clan_role.name}: score={score}, W={wins}, L={losses}", ephemeral=True)
+		await interaction.followup.send(f"Updated {clan_role.name} in {division.value}: score={score}, W={wins}, L={losses}", ephemeral=True)
 
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
@@ -1341,11 +1386,13 @@ class ScoreboardCog(commands.Cog):
 		await interaction.followup.send(f"Updated match {match_id} to {new_a}-{new_b} and adjusted leaderboard.", ephemeral=True)
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
-	@app_commands.command(name="scoreboard_admin_set_latest", description="Admin: set the displayed latest result line")
+	@app_commands.command(name="scoreboard_division_set_latest", description="Admin: set the latest result line for a selected division")
+	@app_commands.choices(division=_division_choices())
 	@app_commands.check(_admin_app_command_check)
 	async def scoreboard_admin_set_latest(
 		self,
 		interaction: discord.Interaction,
+		division: app_commands.Choice[str],
 		clan_a: discord.Role,
 		clan_b: discord.Role,
 		score: str,
@@ -1357,6 +1404,9 @@ class ScoreboardCog(commands.Cog):
 		await interaction.response.defer(ephemeral=True)
 		if clan_a.id not in set(CLAN_ROLES.values()) or clan_b.id not in set(CLAN_ROLES.values()):
 			await interaction.followup.send("Both clans must be configured clan roles.", ephemeral=True)
+			return
+		if _division_for_role_id(clan_a.id) != division.value or _division_for_role_id(clan_b.id) != division.value:
+			await interaction.followup.send("Both clans must belong to the selected division.", ephemeral=True)
 			return
 		try:
 			a, b = _parse_score(score)
@@ -1374,7 +1424,7 @@ class ScoreboardCog(commands.Cog):
 		}
 		await self.store.save()
 		await self.ensure_leaderboard_message()
-		await interaction.followup.send(f"Set latest result to {_role_name_from_id(clan_a.id)} {a}-{b} {_role_name_from_id(clan_b.id)}.", ephemeral=True)
+		await interaction.followup.send(f"Set {division.value} latest result to {_role_name_from_id(clan_a.id)} {a}-{b} {_role_name_from_id(clan_b.id)}.", ephemeral=True)
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.command(name="scoreboard_repost", description="Repost/repair the scoreboard and leaderboard messages")
@@ -1407,31 +1457,49 @@ class ScoreboardCog(commands.Cog):
 		await interaction.followup.send("Queued fresh leaderboard reposts for both divisions.", ephemeral=True)
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
-	@app_commands.command(name="scoreboard_admin_reset", description="Admin: reset leaderboard and clear latest result")
+	@app_commands.command(name="scoreboard_division_reset", description="Admin: reset a selected division leaderboard or both")
+	@app_commands.choices(division=[app_commands.Choice(name="All divisions", value="ALL"), *_division_choices()])
 	@app_commands.check(_admin_app_command_check)
-	async def scoreboard_admin_reset(self, interaction: discord.Interaction):
+	async def scoreboard_admin_reset(self, interaction: discord.Interaction, division: app_commands.Choice[str]):
 		await interaction.response.defer(ephemeral=True)
 
-		# Reset clan stats
-		stats: dict[str, Any] = self.store.data.setdefault("clan_stats", {})
-		for clan_name, role_id in CLAN_ROLES.items():
-			key = str(role_id)
-			stats[key] = {
-				"name": clan_name,
-				"w": 0,
-				"l": 0,
-				"played": 0,
-				"maps_for": 0,
-				"maps_against": 0,
-			}
-		self.store.data["clan_stats"] = stats
-
-		# Clear latest result so the image shows NO RESULTS YET
-		self.store.data["last_result"] = None
-
-		# Optional: clear pending matches (fresh season)
-		self.store.data["pending_matches"] = {}
-		self.store.data["pending_by_validation_message"] = {}
+		if division.value == "ALL":
+			stats: dict[str, Any] = self.store.data.setdefault("clan_stats", {})
+			for clan_name, role_id in CLAN_ROLES.items():
+				key = str(role_id)
+				stats[key] = {
+					"name": clan_name,
+					"w": 0,
+					"l": 0,
+					"played": 0,
+					"maps_for": 0,
+					"maps_against": 0,
+				}
+			self.store.data["clan_stats"] = stats
+			self.store.data["last_result"] = None
+			self.store.data["pending_matches"] = {}
+			self.store.data["pending_by_validation_message"] = {}
+		else:
+			self._clear_division_stats(division.value)
+			allowed_clans = set(DIVISION_CLANS.get(division.value, []))
+			pending_matches = self.store.data.get("pending_matches", {})
+			pending_by_validation_message = self.store.data.get("pending_by_validation_message", {})
+			if isinstance(pending_matches, dict):
+				kept_matches: dict[str, Any] = {}
+				kept_validation_links: dict[str, Any] = {}
+				for match_id, raw_match in pending_matches.items():
+					if not isinstance(raw_match, dict):
+						continue
+					submitter_name = _role_name_from_id(int(raw_match.get("submitter_clan_role_id", 0) or 0))
+					opponent_name = _role_name_from_id(int(raw_match.get("opponent_clan_role_id", 0) or 0))
+					if submitter_name in allowed_clans and opponent_name in allowed_clans:
+						continue
+					kept_matches[str(match_id)] = raw_match
+					validation_message_id = raw_match.get("validation_message_id")
+					if validation_message_id is not None:
+						kept_validation_links[str(validation_message_id)] = str(match_id)
+				self.store.data["pending_matches"] = kept_matches
+				self.store.data["pending_by_validation_message"] = kept_validation_links
 		self.store.data["leaderboard_message_ids"] = {
 			division: self.store.data.get("leaderboard_message_ids", {}).get(division)
 			for division in LEADERBOARD_CHANNEL_IDS.keys()
@@ -1439,7 +1507,8 @@ class ScoreboardCog(commands.Cog):
 
 		await self.store.save()
 		await self.ensure_leaderboard_message()
-		await interaction.followup.send("Leaderboard reset and latest result cleared.", ephemeral=True)
+		label = "all divisions" if division.value == "ALL" else division.value
+		await interaction.followup.send(f"Leaderboard reset for {label} and latest result cleared where applicable.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
