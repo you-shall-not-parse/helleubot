@@ -1066,47 +1066,54 @@ class ScoreboardCog(commands.Cog):
 		available_for_rows = max(16, usable_bottom - usable_top - header_gap)
 		row_h = max(16, int(available_for_rows / row_count))
 
-		header_font = _truetype(_clamp(int(row_h * 0.52), 10, 28))
-		row_font = _truetype(_clamp(int(row_h * 0.58), 10, 30))
+		header_font = _truetype(_clamp(int(row_h * 0.30), 10, 16))
+		row_font = _truetype(_clamp(int(row_h * 0.34), 11, 18))
 
 		col_idx = margin + int(w * 0.02)
 		col_name = margin + int(w * 0.12)
-		# Evenly space numeric columns in a fixed right-side band
-		# Widen the numeric band so Score / W / L / MP have more breathing room.
-		# (This also nudges Score a bit further left.)
-		numeric_right = w - margin - int(w * 0.07)
-		numeric_left = w - margin - int(w * 0.58)
+		name_right = margin + int(w * 0.40)
+		# Reserve a wider band for numeric columns and keep it clearly separated
+		# from the clan name column so the distressed font does not collide.
+		numeric_left = margin + int(w * 0.48)
+		numeric_right = w - margin - int(w * 0.03)
 		segment = max(1, (numeric_right - numeric_left) / 4)
 		col_score = int(numeric_left + segment * 0.5)
 		col_w = int(numeric_left + segment * 1.5)
 		col_l = int(numeric_left + segment * 2.5)
 		col_mp = int(numeric_left + segment * 3.5)
+		name_width = max(40, name_right - col_name)
+		numeric_cell_width = max(24, int(segment * 0.72))
 
 		header_y = usable_top
 		first_row_y = header_y + header_gap
+		header_idx_font = _fit_font("#", int(w * 0.05), _clamp(int(row_h * 0.30), 10, 16), 10)
+		header_name_font = _fit_font("CLAN", name_width, _clamp(int(row_h * 0.30), 10, 16), 10)
+		header_score_font = _fit_font("SCORE", numeric_cell_width, _clamp(int(row_h * 0.30), 10, 16), 9)
+		header_short_font = _fit_font("MP", numeric_cell_width, _clamp(int(row_h * 0.30), 10, 16), 9)
 		# Use anchors so columns align consistently
-		draw.text((col_idx, header_y), "#", font=header_font, fill=text_fill, anchor="la")
-		draw.text((col_name, header_y), "CLAN", font=header_font, fill=text_fill, anchor="la")
-		draw.text((col_score, header_y), "SCORE", font=header_font, fill=text_fill, anchor="ma")
-		draw.text((col_w, header_y), "W", font=header_font, fill=text_fill, anchor="ma")
-		draw.text((col_l, header_y), "L", font=header_font, fill=text_fill, anchor="ma")
-		draw.text((col_mp, header_y), "MP", font=header_font, fill=text_fill, anchor="ma")
+		draw.text((col_idx, header_y), "#", font=header_idx_font, fill=text_fill, anchor="la")
+		draw.text((col_name, header_y), "CLAN", font=header_name_font, fill=text_fill, anchor="la")
+		draw.text((col_score, header_y), "SCORE", font=header_score_font, fill=text_fill, anchor="ma")
+		draw.text((col_w, header_y), "W", font=header_short_font, fill=text_fill, anchor="ma")
+		draw.text((col_l, header_y), "L", font=header_short_font, fill=text_fill, anchor="ma")
+		draw.text((col_mp, header_y), "MP", font=header_short_font, fill=text_fill, anchor="ma")
 
 		for i, r in enumerate(rows, start=1):
 			y = first_row_y + row_h * (i - 1)
 			if y + row_h > usable_bottom + 2:
 				break
 			name = str(r["name"])
-			# keep names from spilling
 			if len(name) > 12:
 				name = name[:11] + "…"
+			name_font = _fit_font(name, name_width, _clamp(int(row_h * 0.34), 11, 18), 10)
+			value_font = _fit_font("00", numeric_cell_width, _clamp(int(row_h * 0.34), 11, 18), 10)
 			draw.text((col_idx, y), str(i), font=row_font, fill=text_fill, anchor="la")
-			draw.text((col_name, y), name, font=row_font, fill=text_fill, anchor="la")
-			draw.text((col_score, y), str(int(r["score"])), font=row_font, fill=text_fill, anchor="ma")
-			draw.text((col_w, y), str(int(r["w"])), font=row_font, fill=text_fill, anchor="ma")
-			draw.text((col_l, y), str(int(r["l"])), font=row_font, fill=text_fill, anchor="ma")
+			draw.text((col_name, y), name, font=name_font, fill=text_fill, anchor="la")
+			draw.text((col_score, y), str(int(r["score"])), font=value_font, fill=text_fill, anchor="ma")
+			draw.text((col_w, y), str(int(r["w"])), font=value_font, fill=text_fill, anchor="ma")
+			draw.text((col_l, y), str(int(r["l"])), font=value_font, fill=text_fill, anchor="ma")
 			played = int(r.get("w", 0)) + int(r.get("l", 0))
-			draw.text((col_mp, y), str(played), font=row_font, fill=text_fill, anchor="ma")
+			draw.text((col_mp, y), str(played), font=value_font, fill=text_fill, anchor="ma")
 
 		safe_division = division.lower().replace(" ", "_")
 		out_path = data_path(f"scoreboard_rendered_{safe_division}.png")
