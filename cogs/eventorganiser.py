@@ -92,6 +92,7 @@ STATE_PATH = data_path("fixture_organiser_state.json")
 OPERATION_DRAW_ASSET_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "operation_draw_assets")
 OPERATION_DRAW_FONT_PATH = os.path.join(os.path.dirname(__file__), "scoreboard_font.ttf")
 OPERATION_DRAW_CACHE_DIR = data_path("operation_draw_cache")
+OPERATION_DRAW_GIF_PATH = data_path("operation_draw_cache/operation_draw_suspense.gif")
 OPERATION_DRAW_STAGE_FILES: dict[str, str] = {
 	"prepare": "prepare_operational_orders.png.png",
 	"receive": "receiving_orders.png.png",
@@ -554,12 +555,6 @@ def _possible_sides_outcomes(s: FixtureState) -> list[tuple[str, str, str]]:
 	]
 
 
-def _operation_draw_progress(step: int, total: int) -> str:
-	filled = "■" * max(0, min(step, total))
-	empty = "□" * max(0, total - max(0, min(step, total)))
-	return f"`{filled}{empty}`"
-
-
 def _operation_draw_asset_path(stage_key: str) -> str:
 	return os.path.join(OPERATION_DRAW_ASSET_DIR, OPERATION_DRAW_STAGE_FILES[stage_key])
 
@@ -571,6 +566,34 @@ def _operation_draw_assets_ready() -> bool:
 def _operation_draw_file(stage_key: str) -> discord.File:
 	path = _operation_draw_asset_path(stage_key)
 	return discord.File(path, filename=os.path.basename(path))
+
+
+def _ensure_operation_draw_suspense_gif() -> Optional[str]:
+	if not _operation_draw_assets_ready():
+		return None
+	if os.path.exists(OPERATION_DRAW_GIF_PATH):
+		return OPERATION_DRAW_GIF_PATH
+
+	from PIL import Image
+
+	stage_order = ["prepare", "receive", "map", "select"]
+	frames: list[Image.Image] = []
+	for stage_key in stage_order:
+		path = _operation_draw_asset_path(stage_key)
+		frame = Image.open(path).convert("RGBA")
+		frames.append(frame)
+
+	os.makedirs(os.path.dirname(OPERATION_DRAW_GIF_PATH), exist_ok=True)
+	frames[0].save(
+		OPERATION_DRAW_GIF_PATH,
+		save_all=True,
+		append_images=frames[1:],
+		format="GIF",
+		duration=[1200, 1400, 1600, 1800],
+		loop=0,
+		disposal=2,
+	)
+	return OPERATION_DRAW_GIF_PATH
 
 
 def _operation_draw_slug(text: str) -> str:
@@ -655,6 +678,7 @@ def _prebuild_operation_draw_cache() -> int:
 	if not _operation_draw_assets_ready():
 		return 0
 	os.makedirs(OPERATION_DRAW_CACHE_DIR, exist_ok=True)
+	_ensure_operation_draw_suspense_gif()
 	count = 0
 	clans = sorted(CLAN_ROLE_IDS.keys())
 	for allies in clans:
@@ -678,10 +702,6 @@ def _prebuild_operation_draw_cache() -> int:
 
 def _operation_draw_embed(
 	*,
-	stage_title: str,
-	stage_body: str,
-	step: int,
-	total_steps: int,
 	preview: bool,
 	image_filename: Optional[str] = None,
 	allies: Optional[str] = None,
@@ -724,45 +744,25 @@ async def _animate_sides_spin(
 	preview: bool = False,
 ) -> None:
 	allies, axis, host = final_outcome
-	stages = [
-		("prepare", "Preparing operational orders", "HQ is preparing sides and server allocation...", 1.1),
-		("receive", "Receiving field reports", "Command staff is reviewing the fixture situation...", 1.3),
-		("map", "Consulting campaign map", "Balancing faction assignment and host server draw...", 1.5),
-		("select", "Sealing final orders", "Final command packet is being stamped and witnessed...", 1.7),
-	]
 	use_image_assets = _operation_draw_assets_ready()
-	first_key, first_title, first_body, _ = stages[0]
-	first_file = _operation_draw_file(first_key) if use_image_assets else None
+	suspense_file: Optional[discord.File] = None
+	suspense_filename: Optional[str] = None
+	if use_image_assets:
+		suspense_gif = await asyncio.to_thread(_ensure_operation_draw_suspense_gif)
+		if suspense_gif:
+			suspense_filename = os.path.basename(suspense_gif)
+			suspense_file = discord.File(suspense_gif, filename=suspense_filename)
 	first_embed = _operation_draw_embed(
-		stage_title=first_title,
-		stage_body=first_body,
-		step=1,
-		total_steps=len(stages),
 		preview=preview,
-		image_filename=first_file.filename if first_file is not None else None,
+		image_filename=suspense_filename,
 	)
-	if first_file is not None:
-		message = await channel.send(embed=first_embed, file=first_file)
+	if suspense_file is not None:
+		message = await channel.send(embed=first_embed, file=suspense_file)
 	else:
 		message = await channel.send(embed=first_embed)
-	for idx, (stage_key, stage_title, stage_body, delay_seconds) in enumerate(stages[1:], start=2):
-		await asyncio.sleep(delay_seconds)
-		stage_file = _operation_draw_file(stage_key) if use_image_assets else None
-		await message.edit(
-			embed=_operation_draw_embed(
-				stage_title=stage_title,
-				stage_body=stage_body,
-				step=idx,
-				total_steps=len(stages),
-				preview=preview,
-				image_filename=stage_file.filename if stage_file is not None else None,
-			),
-			attachments=[stage_file] if stage_file is not None else [],
-		)
 
-	await asyncio.sleep(1.2)
+	await asyncio.sleep(6.0)
 	final_title = "Preview complete" if preview else "Final orders issued"
-	final_body = f"{allies} take Allies. {axis} take Axis. {host} hosts the server."
 	final_file: Optional[discord.File] = None
 	final_filename: Optional[str] = None
 	if use_image_assets:
@@ -777,10 +777,6 @@ async def _animate_sides_spin(
 		final_file = discord.File(final_path, filename=final_filename)
 	await message.edit(
 		embed=_operation_draw_embed(
-			stage_title=final_title,
-			stage_body=final_body,
-			step=len(stages),
-			total_steps=len(stages),
 			preview=preview,
 			image_filename=final_filename,
 			allies=allies,
