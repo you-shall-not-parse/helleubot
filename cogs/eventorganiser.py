@@ -1044,9 +1044,8 @@ def _fixture_embed(s: FixtureState) -> discord.Embed:
 
 	# Sides (status + history)
 	if ENABLE_SIDES:
-		sides_rerolls_line = f"Sides rerolls: {s.clan_a} {s.sides_reroll_count_a}/{REROLL_LIMIT} • {s.clan_b} {s.sides_reroll_count_b}/{REROLL_LIMIT}"
 		sides_hist = _history_lines(s.sides_history, kind="sides")
-		embed.add_field(name="Sides", value=f"```\n{sides_rerolls_line}\n{sides_hist}\n```", inline=False)
+		embed.add_field(name="Sides", value=f"```\n{sides_hist}\n```", inline=False)
 
 	if s.scheduled_event_id:
 		embed.add_field(name="Discord Event", value=f"Created (ID: {s.scheduled_event_id})", inline=False)
@@ -1488,6 +1487,11 @@ class FixtureThreadView(discord.ui.View):
 				self.remove_item(self.accept_sides)
 			except Exception:
 				pass
+		else:
+			try:
+				self.remove_item(self.accept_sides)
+			except Exception:
+				pass
 		try:
 			self.remove_item(self.create_event)
 		except Exception:
@@ -1736,7 +1740,7 @@ class FixtureThreadView(discord.ui.View):
 		await interaction.response.send_message("Map/midpoint locked.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
-	@discord.ui.button(label="Propose sides (coin flip)", style=discord.ButtonStyle.primary, custom_id="fixture:sides_propose")
+	@discord.ui.button(label="Spin sides/server wheel", style=discord.ButtonStyle.primary, custom_id="fixture:sides_propose")
 	async def propose_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
 		if not ENABLE_SIDES:
 			await interaction.response.send_message("Sides is disabled by config.", ephemeral=True)
@@ -1748,22 +1752,8 @@ class FixtureThreadView(discord.ui.View):
 		if s.sides_allies or s.sides_axis:
 			await interaction.response.send_message("Sides are already locked.", ephemeral=True)
 			return
-		# Each clan may request up to REROLL_LIMIT rerolls before sides are accepted/locked.
-		# The initial coin flip doesn't consume a reroll; subsequent flips do.
-		is_first_proposal = s.proposed_sides_allies is None
-		if not is_first_proposal and _sides_reroll_count_for(s, clan) >= REROLL_LIMIT:
-			await interaction.response.send_message("You have used all sides rerolls.", ephemeral=True)
-			return
-		# Avoid repeating the exact same (allies, axis, host) proposal when alternatives exist.
-		last = s.sides_history[-1] if s.sides_history else None
-		avoid_allies = str(last.get("allies")) if isinstance(last, dict) and last.get("allies") else None
-		avoid_axis = str(last.get("axis")) if isinstance(last, dict) and last.get("axis") else None
-		avoid_host = str(last.get("host")) if isinstance(last, dict) and last.get("host") else None
-		avoid = (avoid_allies, avoid_axis, avoid_host) if (avoid_allies and avoid_axis and avoid_host) else None
 
 		possible = _possible_sides_outcomes(s)
-		if avoid is not None and len(possible) > 1:
-			possible = [x for x in possible if x != avoid] or possible
 
 		await interaction.response.defer(ephemeral=True, thinking=True)
 		allies, axis, host = secrets.choice(possible)
@@ -1776,18 +1766,21 @@ class FixtureThreadView(discord.ui.View):
 				)
 			except Exception:
 				pass
-		s.proposed_sides_allies = allies
-		s.proposed_sides_axis = axis
-		s.proposed_sides_by = clan
-		s.proposed_server_host = host
-		s.sides_history.append({"by": clan, "action": "proposed", "allies": allies, "axis": axis, "host": host})
-		if not is_first_proposal:
-			_inc_sides_reroll(s, clan)
+		s.sides_allies = allies
+		s.sides_axis = axis
+		s.server_host = host
+		s.sides_decided_by = clan
+		s.proposed_sides_allies = None
+		s.proposed_sides_axis = None
+		s.proposed_sides_by = None
+		s.proposed_server_host = None
+		s.sides_history.append({"by": clan, "action": "locked", "allies": allies, "axis": axis, "host": host})
 		st = _load_state()
 		st["threads"][s.key] = _state_to_dict(s)
 		_save_state(st)
-		await interaction.followup.send("Sides proposal updated.", ephemeral=True)
+		await interaction.followup.send("Sides/server locked from the wheel spin.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
+		asyncio.create_task(_auto_sync_event(interaction.client, interaction.guild, s.thread_id))
 
 	@discord.ui.button(label="Accept sides", style=discord.ButtonStyle.success, custom_id="fixture:sides_accept")
 	async def accept_sides(self, interaction: discord.Interaction, button: discord.ui.Button):

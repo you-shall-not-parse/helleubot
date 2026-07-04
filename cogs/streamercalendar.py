@@ -551,6 +551,28 @@ async def _refresh_request_message(bot: commands.Bot, guild: discord.Guild, entr
 		return
 
 
+async def _delete_request_by_id(bot: commands.Bot, guild: discord.Guild, request_id: str) -> bool:
+	state = _load_streamer_state()
+	if _normalize_streamer_requests(state):
+		_save_streamer_state(state)
+	requests = state.get("requests", {})
+	if not isinstance(requests, dict):
+		return False
+	entry = requests.get(request_id)
+	if not isinstance(entry, dict):
+		return False
+	requests_channel = guild.get_channel(STREAMER_REQUESTS_CHANNEL_ID)
+	await _delete_request_message(
+		requests_channel if isinstance(requests_channel, discord.TextChannel) else None,
+		entry.get("request_message_id"),
+	)
+	requests.pop(request_id, None)
+	state["requests"] = requests
+	_save_streamer_state(state)
+	await _refresh_streamer_surfaces(bot, guild)
+	return True
+
+
 class StreamerBoardRequestSelect(discord.ui.Select):
 	def __init__(self, state: dict[str, Any], *, action: str):
 		self.action = action
@@ -692,6 +714,35 @@ class StreamerRequestActionsView(discord.ui.View):
 	@discord.ui.button(label="Remove", style=discord.ButtonStyle.secondary, custom_id="streamreq:remove")
 	async def remove(self, interaction: discord.Interaction, button: discord.ui.Button):
 		await self._mutate_for_message(interaction, action="remove")
+
+	@discord.ui.button(label="Admin Delete", style=discord.ButtonStyle.danger, custom_id="streamreq:admin_delete")
+	async def admin_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+		if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+			await interaction.response.send_message("Server only.", ephemeral=True)
+			return
+		if not interaction.user.guild_permissions.administrator:
+			await interaction.response.send_message("Only administrators can delete streamer requests.", ephemeral=True)
+			return
+		if interaction.channel is None or interaction.channel.id != STREAMER_REQUESTS_CHANNEL_ID:
+			await interaction.response.send_message("Use this on the request message in the streamer requests channel.", ephemeral=True)
+			return
+		if interaction.message is None:
+			await interaction.response.send_message("No message context.", ephemeral=True)
+			return
+
+		state = _load_streamer_state()
+		hit = _find_request_by_message_id(state, interaction.message.id)
+		if hit is None:
+			await interaction.response.send_message("This request is not tracked.", ephemeral=True)
+			return
+		request_id, _ = hit
+
+		await interaction.response.defer(ephemeral=True, thinking=False)
+		deleted = await _delete_request_by_id(self.bot, interaction.guild, request_id)
+		if not deleted:
+			await interaction.followup.send("Failed to delete that request.", ephemeral=True)
+			return
+		await interaction.followup.send("Streamer request deleted.", ephemeral=True)
 
 
 async def maybe_post_streamer_request(
