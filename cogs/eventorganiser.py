@@ -89,6 +89,16 @@ REROLL_LIMIT = 3
 # Where we persist state
 STATE_PATH = data_path("fixture_organiser_state.json")
 
+OPERATION_DRAW_ASSET_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "operation_draw_assets")
+OPERATION_DRAW_FONT_PATH = os.path.join(os.path.dirname(__file__), "scoreboard_font.ttf")
+OPERATION_DRAW_STAGE_FILES: dict[str, str] = {
+	"prepare": "prepare_operational_orders.png.png",
+	"receive": "receiving_orders.png.png",
+	"map": "consulting_campaign_map.png.png",
+	"select": "selecting_faction.png.png",
+	"final": "final_order_blank.png.png",
+}
+
 
 
 # =============================
@@ -549,6 +559,71 @@ def _operation_draw_progress(step: int, total: int) -> str:
 	return f"`{filled}{empty}`"
 
 
+def _operation_draw_asset_path(stage_key: str) -> str:
+	return os.path.join(OPERATION_DRAW_ASSET_DIR, OPERATION_DRAW_STAGE_FILES[stage_key])
+
+
+def _operation_draw_assets_ready() -> bool:
+	return all(os.path.exists(_operation_draw_asset_path(stage_key)) for stage_key in OPERATION_DRAW_STAGE_FILES)
+
+
+def _operation_draw_file(stage_key: str) -> discord.File:
+	path = _operation_draw_asset_path(stage_key)
+	return discord.File(path, filename=os.path.basename(path))
+
+
+def _render_operation_draw_final_image(
+	*,
+	thread_id: int,
+	allies: str,
+	axis: str,
+	host: str,
+	preview: bool,
+) -> str:
+	from PIL import Image, ImageDraw, ImageFont
+
+	base_path = _operation_draw_asset_path("final")
+	base = Image.open(base_path).convert("RGBA")
+	draw = ImageDraw.Draw(base)
+
+	def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+		try:
+			return ImageFont.truetype(OPERATION_DRAW_FONT_PATH, size)
+		except Exception:
+			return ImageFont.load_default()
+
+	stamp_label = axis.upper()
+	stamp_font = _font(92)
+	summary_font = _font(30)
+	meta_font = _font(26)
+	stamp_color = (150, 38, 28, 230)
+	text_color = (230, 220, 205, 255)
+
+	stamp_center = (580, 420)
+	draw.rounded_rectangle((420, 318, 742, 520), radius=10, outline=stamp_color, width=7)
+	stamp_bbox = draw.textbbox((0, 0), stamp_label, font=stamp_font)
+	stamp_w = stamp_bbox[2] - stamp_bbox[0]
+	stamp_h = stamp_bbox[3] - stamp_bbox[1]
+	draw.text((stamp_center[0] - stamp_w / 2, stamp_center[1] - stamp_h / 2), stamp_label, font=stamp_font, fill=stamp_color)
+
+	summary_lines = [
+		f"Allies: {allies}",
+		f"Axis: {axis}",
+		f"Host: {host}",
+	]
+	if preview:
+		summary_lines.append("Preview only - no fixture updated")
+
+	y = 610
+	for line in summary_lines:
+		draw.text((410, y), line, font=summary_font if not line.startswith("Preview") else meta_font, fill=text_color)
+		y += 42
+
+	out_path = data_path(f"operation_draw_final_{thread_id}.png")
+	base.save(out_path, format="PNG")
+	return out_path
+
+
 def _operation_draw_embed(
 	*,
 	stage_title: str,
@@ -556,6 +631,7 @@ def _operation_draw_embed(
 	step: int,
 	total_steps: int,
 	preview: bool,
+	image_filename: Optional[str] = None,
 	allies: Optional[str] = None,
 	axis: Optional[str] = None,
 	host: Optional[str] = None,
@@ -587,6 +663,8 @@ def _operation_draw_embed(
 		embed.set_footer(text="Orders sealed. Result has been recorded.")
 	else:
 		embed.set_footer(text="Bot edits this message step by step, then reveals the result.")
+	if image_filename:
+		embed.set_image(url=f"attachment://{image_filename}")
 
 	return embed
 
@@ -602,22 +680,29 @@ async def _animate_sides_spin(
 ) -> None:
 	allies, axis, host = final_outcome
 	stages = [
-		("Preparing operational orders", "HQ is preparing sides and server allocation...", 1.1),
-		("Receiving field reports", "Command staff is reviewing the fixture situation...", 1.3),
-		("Consulting campaign map", "Balancing faction assignment and host server draw...", 1.5),
-		("Sealing final orders", "Final command packet is being stamped and witnessed...", 1.7),
+		("prepare", "Preparing operational orders", "HQ is preparing sides and server allocation...", 1.1),
+		("receive", "Receiving field reports", "Command staff is reviewing the fixture situation...", 1.3),
+		("map", "Consulting campaign map", "Balancing faction assignment and host server draw...", 1.5),
+		("select", "Sealing final orders", "Final command packet is being stamped and witnessed...", 1.7),
 	]
-	message = await channel.send(
-		embed=_operation_draw_embed(
-			stage_title=stages[0][0],
-			stage_body=stages[0][1],
-			step=1,
-			total_steps=len(stages),
-			preview=preview,
-		)
+	use_image_assets = _operation_draw_assets_ready()
+	first_key, first_title, first_body, _ = stages[0]
+	first_file = _operation_draw_file(first_key) if use_image_assets else None
+	first_embed = _operation_draw_embed(
+		stage_title=first_title,
+		stage_body=first_body,
+		step=1,
+		total_steps=len(stages),
+		preview=preview,
+		image_filename=first_file.filename if first_file is not None else None,
 	)
-	for idx, (stage_title, stage_body, delay_seconds) in enumerate(stages[1:], start=2):
+	if first_file is not None:
+		message = await channel.send(embed=first_embed, file=first_file)
+	else:
+		message = await channel.send(embed=first_embed)
+	for idx, (stage_key, stage_title, stage_body, delay_seconds) in enumerate(stages[1:], start=2):
 		await asyncio.sleep(delay_seconds)
+		stage_file = _operation_draw_file(stage_key) if use_image_assets else None
 		await message.edit(
 			embed=_operation_draw_embed(
 				stage_title=stage_title,
@@ -625,12 +710,27 @@ async def _animate_sides_spin(
 				step=idx,
 				total_steps=len(stages),
 				preview=preview,
-			)
+				image_filename=stage_file.filename if stage_file is not None else None,
+			),
+			attachments=[stage_file] if stage_file is not None else [],
 		)
 
 	await asyncio.sleep(1.2)
 	final_title = "Preview complete" if preview else "Final orders issued"
 	final_body = f"{allies} take Allies. {axis} take Axis. {host} hosts the server."
+	final_file: Optional[discord.File] = None
+	final_filename: Optional[str] = None
+	if use_image_assets:
+		final_path = await asyncio.to_thread(
+			_render_operation_draw_final_image,
+			thread_id=thread_id,
+			allies=allies,
+			axis=axis,
+			host=host,
+			preview=preview,
+		)
+		final_filename = os.path.basename(final_path)
+		final_file = discord.File(final_path, filename=final_filename)
 	await message.edit(
 		embed=_operation_draw_embed(
 			stage_title=final_title,
@@ -638,12 +738,14 @@ async def _animate_sides_spin(
 			step=len(stages),
 			total_steps=len(stages),
 			preview=preview,
+			image_filename=final_filename,
 			allies=allies,
 			axis=axis,
 			host=host,
 			witnessed_by=witnessed_by,
 			final=True,
-		)
+		),
+		attachments=[final_file] if final_file is not None else [],
 	)
 
 
