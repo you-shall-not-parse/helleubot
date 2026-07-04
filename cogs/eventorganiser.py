@@ -1,6 +1,5 @@
 import asyncio
 import json
-import math
 import os
 import random
 import secrets
@@ -621,115 +620,52 @@ def _possible_sides_outcomes(s: FixtureState) -> list[tuple[str, str, str]]:
 	]
 
 
-def _format_sides_result(*, allies: str, axis: str, host: str, preview: bool = False) -> str:
-	header = "Wheel preview" if preview else "Wheel result locked"
-	return (
-		f"**{header}**\n"
-		f"Allies: **{allies}**\n"
-		f"Axis: **{axis}**\n"
-		f"Server host: **{host}**"
-	)
+def _operation_draw_progress(step: int, total: int) -> str:
+	filled = "■" * max(0, min(step, total))
+	empty = "□" * max(0, total - max(0, min(step, total)))
+	return f"`{filled}{empty}`"
 
 
-def _build_sides_label(*, allies: str, axis: str, host: str) -> str:
-	return f"A {allies}\nX {axis}\nH {host}"
-
-
-def _render_sides_spin_gif(
+def _operation_draw_embed(
 	*,
-	thread_id: int,
-	possible: list[tuple[str, str, str]],
-	final_outcome: tuple[str, str, str],
-) -> str:
-	from PIL import Image, ImageDraw, ImageFont
+	stage_title: str,
+	stage_body: str,
+	step: int,
+	total_steps: int,
+	preview: bool,
+	allies: Optional[str] = None,
+	axis: Optional[str] = None,
+	host: Optional[str] = None,
+	witnessed_by: Optional[str] = None,
+	final: bool = False,
+) -> discord.Embed:
+	title = "OPERATION DRAW" if not final else "OPERATION DRAW COMPLETE"
+	color = discord.Color.from_rgb(181, 129, 53) if not final else discord.Color.from_rgb(201, 86, 45)
+	mode = "Preview" if preview else "Live fixture selection"
+	embed = discord.Embed(title=title, color=color)
+	embed.add_field(name="Stage", value=stage_title, inline=False)
+	embed.add_field(name="Status", value=stage_body, inline=False)
+	embed.add_field(name="Progress", value=_operation_draw_progress(step, total_steps), inline=False)
+	embed.add_field(name="Mode", value=mode, inline=True)
 
-	image_size = 520
-	center = image_size // 2
-	wheel_radius = 190
-	pointer_y = center - wheel_radius - 10
-	background = (18, 20, 27)
-	colors = [
-		(212, 68, 87),
-		(43, 108, 176),
-		(47, 133, 90),
-		(221, 107, 32),
-	]
-	text_color = (245, 245, 245)
-	outline_color = (255, 255, 255)
-	start_angle = -90.0
-	slice_angle = 360.0 / max(1, len(possible))
-	font = ImageFont.load_default()
-
-	base = Image.new("RGBA", (image_size, image_size), (0, 0, 0, 0))
-	draw = ImageDraw.Draw(base)
-	bbox = [center - wheel_radius, center - wheel_radius, center + wheel_radius, center + wheel_radius]
-
-	for idx, (allies, axis, host) in enumerate(possible):
-		slice_start = start_angle + (slice_angle * idx)
-		slice_end = slice_start + slice_angle
-		draw.pieslice(bbox, start=slice_start, end=slice_end, fill=colors[idx % len(colors)], outline=outline_color, width=3)
-		mid_angle = math.radians(slice_start + (slice_angle / 2.0))
-		text_radius = wheel_radius * 0.58
-		text_x = center + math.cos(mid_angle) * text_radius
-		text_y = center + math.sin(mid_angle) * text_radius
-		label = _build_sides_label(allies=allies, axis=axis, host=host)
-		text_bbox = draw.multiline_textbbox((0, 0), label, font=font, spacing=2, align="center")
-		text_w = text_bbox[2] - text_bbox[0]
-		text_h = text_bbox[3] - text_bbox[1]
-		draw.multiline_text(
-			(text_x - (text_w / 2), text_y - (text_h / 2)),
-			label,
-			font=font,
-			fill=text_color,
-			spacing=2,
-			align="center",
+	if final:
+		if allies and axis:
+			embed.add_field(name="Allies", value=allies, inline=True)
+			embed.add_field(name="Axis", value=axis, inline=True)
+		if host:
+			embed.add_field(name="Server Host", value=host, inline=True)
+		if witnessed_by:
+			embed.add_field(name="Witnessed By", value=witnessed_by, inline=True)
+		embed.add_field(
+			name="Timestamp",
+			value=datetime.now().astimezone().strftime("%d %b %Y, %H:%M (%Z)"),
+			inline=True,
 		)
+		embed.set_footer(text="Orders sealed. Result has been recorded.")
+	else:
+		embed.set_footer(text="Bot edits this message step by step, then reveals the result.")
 
-	draw.ellipse(bbox, outline=outline_color, width=4)
-	draw.ellipse(
-		(center - 18, center - 18, center + 18, center + 18),
-		fill=(35, 35, 35),
-		outline=outline_color,
-		width=3,
-	)
-
-	target_idx = possible.index(final_outcome)
-	target_center = start_angle + (slice_angle * target_idx) + (slice_angle / 2.0)
-	final_rotation = (-90.0 - target_center) + (360.0 * 5)
-	frame_count = 22
-	frames: list[Image.Image] = []
-	durations: list[int] = []
-
-	for frame_idx in range(frame_count):
-		progress = frame_idx / max(1, frame_count - 1)
-		eased = 1.0 - ((1.0 - progress) ** 3)
-		rotation = final_rotation * eased
-		frame = Image.new("RGBA", (image_size, image_size), background + (255,))
-		rotated = base.rotate(rotation, resample=Image.Resampling.BICUBIC)
-		frame.alpha_composite(rotated)
-		frame_draw = ImageDraw.Draw(frame)
-		frame_draw.polygon(
-			[(center, pointer_y), (center - 18, pointer_y - 30), (center + 18, pointer_y - 30)],
-			fill=(255, 230, 120),
-			outline=(20, 20, 20),
-		)
-		status = "SPINNING..." if frame_idx < frame_count - 1 else "RESULT LOCKED"
-		status_bbox = frame_draw.textbbox((0, 0), status, font=font)
-		status_w = status_bbox[2] - status_bbox[0]
-		frame_draw.text(((image_size - status_w) / 2, 18), status, font=font, fill=text_color)
-		frames.append(frame.convert("P", palette=Image.Palette.ADAPTIVE))
-		durations.append(55 + int(progress * 85))
-
-	out_path = data_path(f"sides_spin_{thread_id}.gif")
-	frames[0].save(
-		out_path,
-		save_all=True,
-		append_images=frames[1:],
-		duration=durations,
-		loop=0,
-		disposal=2,
-	)
-	return out_path
+	return embed
 
 
 async def _animate_sides_spin(
@@ -738,20 +674,54 @@ async def _animate_sides_spin(
 	thread_id: int,
 	possible: list[tuple[str, str, str]],
 	final_outcome: tuple[str, str, str],
+	witnessed_by: Optional[str] = None,
 	preview: bool = False,
 ) -> None:
 	allies, axis, host = final_outcome
-	try:
-		gif_path = await asyncio.to_thread(
-			_render_sides_spin_gif,
-			thread_id=thread_id,
-			possible=possible,
-			final_outcome=final_outcome,
+	stages = [
+		("Preparing operational orders", "HQ is preparing sides and server allocation...", 1.1),
+		("Receiving field reports", "Command staff is reviewing the fixture situation...", 1.3),
+		("Consulting campaign map", "Balancing faction assignment and host server draw...", 1.5),
+		("Sealing final orders", "Final command packet is being stamped and witnessed...", 1.7),
+	]
+	message = await channel.send(
+		embed=_operation_draw_embed(
+			stage_title=stages[0][0],
+			stage_body=stages[0][1],
+			step=1,
+			total_steps=len(stages),
+			preview=preview,
 		)
-		file = discord.File(gif_path, filename=os.path.basename(gif_path))
-		await channel.send(content=_format_sides_result(allies=allies, axis=axis, host=host, preview=preview), file=file)
-	except Exception:
-		await channel.send(content=_format_sides_result(allies=allies, axis=axis, host=host, preview=preview))
+	)
+	for idx, (stage_title, stage_body, delay_seconds) in enumerate(stages[1:], start=2):
+		await asyncio.sleep(delay_seconds)
+		await message.edit(
+			embed=_operation_draw_embed(
+				stage_title=stage_title,
+				stage_body=stage_body,
+				step=idx,
+				total_steps=len(stages),
+				preview=preview,
+			)
+		)
+
+	await asyncio.sleep(1.2)
+	final_title = "Preview complete" if preview else "Final orders issued"
+	final_body = f"{allies} take Allies. {axis} take Axis. {host} hosts the server."
+	await message.edit(
+		embed=_operation_draw_embed(
+			stage_title=final_title,
+			stage_body=final_body,
+			step=len(stages),
+			total_steps=len(stages),
+			preview=preview,
+			allies=allies,
+			axis=axis,
+			host=host,
+			witnessed_by=witnessed_by,
+			final=True,
+		)
+	)
 
 
 async def _preview_sides_spin(interaction: discord.Interaction) -> None:
@@ -769,9 +739,10 @@ async def _preview_sides_spin(interaction: discord.Interaction) -> None:
 			thread_id=interaction.id,
 			possible=possible,
 			final_outcome=(allies, axis, host),
+			witnessed_by=interaction.user.mention,
 			preview=True,
 		)
-	await interaction.followup.send("Wheel preview posted. This did not update any fixture.", ephemeral=True)
+	await interaction.followup.send("Preview posted. This did not update any fixture.", ephemeral=True)
 
 
 async def _lock_sides_from_wheel(
@@ -791,6 +762,7 @@ async def _lock_sides_from_wheel(
 				thread_id=s.thread_id,
 				possible=possible,
 				final_outcome=(allies, axis, host),
+				witnessed_by=interaction.user.mention,
 			)
 		except Exception:
 			pass
@@ -806,7 +778,7 @@ async def _lock_sides_from_wheel(
 	st = _load_state()
 	st["threads"][s.key] = _state_to_dict(s)
 	_save_state(st)
-	await interaction.followup.send("Sides/server locked from the wheel spin.", ephemeral=True)
+	await interaction.followup.send("Sides/server locked from the draw result.", ephemeral=True)
 	asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 	asyncio.create_task(_auto_sync_event(interaction.client, interaction.guild, s.thread_id))
 
@@ -1900,7 +1872,7 @@ class FixtureThreadView(discord.ui.View):
 		await interaction.response.send_message("Map/midpoint locked.", ephemeral=True)
 		asyncio.create_task(_refresh_thread(interaction.client, s.thread_id))
 
-	@discord.ui.button(label="Spin sides/server wheel", style=discord.ButtonStyle.primary, custom_id="fixture:sides_propose")
+	@discord.ui.button(label="Run sides/server draw", style=discord.ButtonStyle.primary, custom_id="fixture:sides_propose")
 	async def propose_sides(self, interaction: discord.Interaction, button: discord.ui.Button):
 		if not ENABLE_SIDES:
 			await interaction.response.send_message("Sides is disabled by config.", ephemeral=True)
@@ -2175,9 +2147,9 @@ class EventOrganiser(commands.Cog):
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.guild_only()
-	@app_commands.command(name="wheelspin", description="Preview the sides/server wheel or spin it for a fixture thread")
-	@app_commands.describe(thread="Optional fixture thread to spin for; omit it to post a preview in the current channel")
-	async def wheelspin(self, interaction: discord.Interaction, thread: Optional[discord.Thread] = None):
+	@app_commands.command(name="sidesandserverdraw", description="Preview the sides/server draw or run it for a fixture thread")
+	@app_commands.describe(thread="Optional fixture thread to run the draw for; omit it to post a preview in the current channel")
+	async def sidesandserverdraw(self, interaction: discord.Interaction, thread: Optional[discord.Thread] = None):
 		if not ENABLE_SIDES:
 			await interaction.response.send_message("Sides is disabled by config.", ephemeral=True)
 			return

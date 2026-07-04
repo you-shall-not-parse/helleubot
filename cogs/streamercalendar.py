@@ -35,19 +35,24 @@ STREAMER_CLEANUP_INTERVAL_MINUTES = 15
 
 def _load_streamer_state() -> dict[str, Any]:
 	if not os.path.exists(STREAMER_STATE_PATH):
-		return {"board_message_id": None, "requests": {}}
+		return {"board_message_id": None, "requests": {}, "suppressed_thread_ids": []}
 	try:
 		with open(STREAMER_STATE_PATH, "r", encoding="utf-8") as f:
 			data = json.load(f)
 		if not isinstance(data, dict):
-			return {"board_message_id": None, "requests": {}}
+			return {"board_message_id": None, "requests": {}, "suppressed_thread_ids": []}
 		data.setdefault("board_message_id", None)
 		data.setdefault("requests", {})
+		data.setdefault("suppressed_thread_ids", [])
 		if not isinstance(data.get("requests"), dict):
 			data["requests"] = {}
+		if not isinstance(data.get("suppressed_thread_ids"), list):
+			data["suppressed_thread_ids"] = []
+		else:
+			data["suppressed_thread_ids"] = _dedupe_ints(data.get("suppressed_thread_ids", []))
 		return data
 	except Exception:
-		return {"board_message_id": None, "requests": {}}
+		return {"board_message_id": None, "requests": {}, "suppressed_thread_ids": []}
 
 
 def _save_streamer_state(state: dict[str, Any]) -> None:
@@ -235,12 +240,21 @@ def _merge_request_entries(base: dict[str, Any], incoming: dict[str, Any]) -> di
 
 def _normalize_streamer_requests(state: dict[str, Any]) -> bool:
 	requests = state.get("requests", {})
+	suppressed = state.get("suppressed_thread_ids", [])
+	changed = False
+	if not isinstance(suppressed, list):
+		state["suppressed_thread_ids"] = []
+		changed = True
+	else:
+		normalized_suppressed = _dedupe_ints(suppressed)
+		if normalized_suppressed != suppressed:
+			state["suppressed_thread_ids"] = normalized_suppressed
+			changed = True
 	if not isinstance(requests, dict):
 		state["requests"] = {}
 		return True
 
 	normalized: dict[str, dict[str, Any]] = {}
-	changed = False
 	for rid, raw in requests.items():
 		if not isinstance(raw, dict):
 			changed = True
@@ -566,6 +580,13 @@ async def _delete_request_by_id(bot: commands.Bot, guild: discord.Guild, request
 		requests_channel if isinstance(requests_channel, discord.TextChannel) else None,
 		entry.get("request_message_id"),
 	)
+	thread_id = entry.get("thread_id")
+	if isinstance(thread_id, int) and thread_id > 0:
+		suppressed = state.get("suppressed_thread_ids", [])
+		if not isinstance(suppressed, list):
+			suppressed = []
+		suppressed = _dedupe_ints(list(suppressed) + [thread_id])
+		state["suppressed_thread_ids"] = suppressed
 	requests.pop(request_id, None)
 	state["requests"] = requests
 	_save_streamer_state(state)
@@ -768,6 +789,9 @@ async def maybe_post_streamer_request(
 	requests = state.get("requests", {})
 	if not isinstance(requests, dict):
 		requests = {}
+	suppressed = state.get("suppressed_thread_ids", [])
+	if isinstance(suppressed, list) and thread_id in suppressed:
+		return
 
 	request_id = str(thread_id)
 	hit = _find_request_for_fixture(state, thread_id=thread_id, event_id=event_id if event_id > 0 else None)
@@ -862,6 +886,10 @@ async def maybe_remove_streamer_request(
 ) -> None:
 	state = _load_streamer_state()
 	if _normalize_streamer_requests(state):
+		_save_streamer_state(state)
+	suppressed = state.get("suppressed_thread_ids", [])
+	if isinstance(suppressed, list) and thread_id in suppressed:
+		state["suppressed_thread_ids"] = [x for x in suppressed if x != thread_id]
 		_save_streamer_state(state)
 	hit = _find_request_for_fixture(state, thread_id=thread_id)
 	if hit is None:
