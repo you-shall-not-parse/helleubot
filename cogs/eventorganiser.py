@@ -621,9 +621,10 @@ def _possible_sides_outcomes(s: FixtureState) -> list[tuple[str, str, str]]:
 	]
 
 
-def _format_sides_result(*, allies: str, axis: str, host: str) -> str:
+def _format_sides_result(*, allies: str, axis: str, host: str, preview: bool = False) -> str:
+	header = "Wheel preview" if preview else "Wheel result locked"
 	return (
-		"**Wheel result locked**\n"
+		f"**{header}**\n"
 		f"Allies: **{allies}**\n"
 		f"Axis: **{axis}**\n"
 		f"Server host: **{host}**"
@@ -737,6 +738,7 @@ async def _animate_sides_spin(
 	thread_id: int,
 	possible: list[tuple[str, str, str]],
 	final_outcome: tuple[str, str, str],
+	preview: bool = False,
 ) -> None:
 	allies, axis, host = final_outcome
 	try:
@@ -747,9 +749,29 @@ async def _animate_sides_spin(
 			final_outcome=final_outcome,
 		)
 		file = discord.File(gif_path, filename=os.path.basename(gif_path))
-		await channel.send(content=_format_sides_result(allies=allies, axis=axis, host=host), file=file)
+		await channel.send(content=_format_sides_result(allies=allies, axis=axis, host=host, preview=preview), file=file)
 	except Exception:
-		await channel.send(content=_format_sides_result(allies=allies, axis=axis, host=host))
+		await channel.send(content=_format_sides_result(allies=allies, axis=axis, host=host, preview=preview))
+
+
+async def _preview_sides_spin(interaction: discord.Interaction) -> None:
+	possible = [
+		("Team A", "Team B", "Team A"),
+		("Team A", "Team B", "Team B"),
+		("Team B", "Team A", "Team A"),
+		("Team B", "Team A", "Team B"),
+	]
+	await interaction.response.defer(ephemeral=True, thinking=True)
+	allies, axis, host = secrets.choice(possible)
+	if interaction.channel is not None:
+		await _animate_sides_spin(
+			interaction.channel,
+			thread_id=interaction.id,
+			possible=possible,
+			final_outcome=(allies, axis, host),
+			preview=True,
+		)
+	await interaction.followup.send("Wheel preview posted. This did not update any fixture.", ephemeral=True)
 
 
 async def _lock_sides_from_wheel(
@@ -2153,8 +2175,8 @@ class EventOrganiser(commands.Cog):
 
 	@app_commands.guilds(discord.Object(id=GUILD_ID))
 	@app_commands.guild_only()
-	@app_commands.command(name="wheelspin", description="Spin the sides/server wheel for the current fixture thread")
-	@app_commands.describe(thread="Optional fixture thread to spin for; admins only when running outside the thread")
+	@app_commands.command(name="wheelspin", description="Preview the sides/server wheel or spin it for a fixture thread")
+	@app_commands.describe(thread="Optional fixture thread to spin for; omit it to post a preview in the current channel")
 	async def wheelspin(self, interaction: discord.Interaction, thread: Optional[discord.Thread] = None):
 		if not ENABLE_SIDES:
 			await interaction.response.send_message("Sides is disabled by config.", ephemeral=True)
@@ -2167,7 +2189,7 @@ class EventOrganiser(commands.Cog):
 		if target_thread is None:
 			channel = interaction.channel
 			if not isinstance(channel, discord.Thread):
-				await interaction.response.send_message("Use this command inside a fixture thread, or provide a thread as an admin.", ephemeral=True)
+				await _preview_sides_spin(interaction)
 				return
 			target_thread = channel
 		elif not is_admin:
