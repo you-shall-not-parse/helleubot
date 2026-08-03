@@ -19,7 +19,7 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 
 # Rotating file logging (.txt) - 5 MB per file, keep 3 backups
-log_file_path = os.path.join(os.path.dirname(__file__), 'bot.log.txt')
+log_file_path = os.path.join(os.path.dirname(__file__), 'helleubot.log.txt')
 file_handler = RotatingFileHandler(log_file_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8')
 file_handler.setFormatter(formatter)
 
