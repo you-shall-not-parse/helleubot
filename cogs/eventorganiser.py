@@ -1430,6 +1430,17 @@ class CreateThreadButton(discord.ui.Button):
 		if len(thread_name) > 100:
 			thread_name = thread_name[:97] + "..."
 
+		# Build the panel before creating the forum post so its starter message is
+		# also the fixture control message.
+		s = FixtureState(
+			thread_id=0,
+			clan_a=requester_clan,
+			clan_b=opponent_clan,
+			round_no=round_no,
+			division=division,
+		)
+		embed = _fixture_embed(s)
+
 		# A forum post is a public thread. Visibility is controlled by the forum's
 		# channel permission overrides in Discord.
 		try:
@@ -1437,6 +1448,7 @@ class CreateThreadButton(discord.ui.Button):
 				name=thread_name,
 				auto_archive_duration=10080,
 				content=f"{requester_clan} vs {opponent_clan}",
+				embed=embed,
 			)
 			thread = created.thread
 		except discord.Forbidden:
@@ -1449,29 +1461,17 @@ class CreateThreadButton(discord.ui.Button):
 			await interaction.followup.send(f"Failed to create thread: {e}", ephemeral=True)
 			return
 
-		s = FixtureState(
-			thread_id=thread.id,
-			clan_a=requester_clan,
-			clan_b=opponent_clan,
-			round_no=round_no,
-			division=division,
-		)
-
-		state = _load_state()
-		state["threads"][s.key] = _state_to_dict(s)
-		_save_state(state)
-
+		s.thread_id = thread.id
 		control_view = FixtureThreadView(thread_id=thread.id)
-		embed = _fixture_embed(s)
-		msg = await thread.send(content=f"{requester_clan} vs {opponent_clan}", embed=embed, view=control_view)
-		s.control_message_id = msg.id
+		s.control_message_id = created.message.id
 		state = _load_state()
 		state["threads"][s.key] = _state_to_dict(s)
 		_save_state(state)
+		await created.message.edit(view=control_view)
 		# Register the view so the buttons keep working after restarts.
 		try:
 			if hasattr(interaction.client, "add_view"):
-				interaction.client.add_view(control_view, message_id=msg.id)  # type: ignore[attr-defined]
+				interaction.client.add_view(control_view, message_id=created.message.id)  # type: ignore[attr-defined]
 		except Exception:
 			pass
 
