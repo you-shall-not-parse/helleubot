@@ -1,1 +1,1 @@
-# league-bot
+# Hell-EU Bot
