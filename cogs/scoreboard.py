@@ -222,8 +222,8 @@ def _build_scoreboard_embed() -> discord.Embed:
 		description=(
 			"- Click the button below to submit a match result for validation by the opposing clan.\n"
 			f"- It will then post a submission in <#{VALIDATION_CHANNEL_ID}> for the opposing side to confirm.\n"
-			f"- When confirmed, the division league tables update in <#{LEADERBOARD_CHANNEL_IDS['Axis Division']}> "
-			f"and <#{LEADERBOARD_CHANNEL_IDS['Allied Division']}>; this may queue and take up to 5-10 mins.\n"
+			f"- When confirmed, the division league tables update in <#{LEADERBOARD_CHANNEL_IDS['Division 1']}> "
+			f"and <#{LEADERBOARD_CHANNEL_IDS['Division 2']}>; this may queue and take up to 5-10 mins.\n"
 			"- Link the relevant announcement channel as a feed in your clan Discord, or copy and paste the table."
 		),
 		colour=discord.Colour.green(),
@@ -306,9 +306,17 @@ class ScoreboardStore:
 				message_ids = {}
 				self.data["leaderboard_message_ids"] = message_ids
 
+			# Migrate leaderboard message references from the former division names.
+			for old_name, new_name in {
+				"Axis Division": "Division 1",
+				"Allied Division": "Division 2",
+			}.items():
+				if old_name in message_ids:
+					message_ids.setdefault(new_name, message_ids.pop(old_name))
+
 			legacy_message_id = self.data.get("leaderboard_message_id")
-			if legacy_message_id and not message_ids.get("Axis Division"):
-				message_ids["Axis Division"] = legacy_message_id
+			if legacy_message_id and not message_ids.get("Division 1"):
+				message_ids["Division 1"] = legacy_message_id
 			await self._ensure_clans_locked()
 
 	async def save(self) -> None:

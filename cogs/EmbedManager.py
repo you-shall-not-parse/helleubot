@@ -110,8 +110,8 @@ class EmbedManager(commands.Cog):
             value=(
                 "- Single division, everyone plays each team once\n"
                 f"- Match scheduling is handled directly between clan representatives using <#{ORGANISER_EMBED_CHANNEL_ID}>\n"
-                f"- Axis and Allied standings are posted in <#{LEADERBOARD_CHANNEL_IDS['Axis Division']}> "
-                f"and <#{LEADERBOARD_CHANNEL_IDS['Allied Division']}>\n"
+                f"- Division 1 and Division 2 standings are posted in <#{LEADERBOARD_CHANNEL_IDS['Division 1']}> "
+                f"and <#{LEADERBOARD_CHANNEL_IDS['Division 2']}>\n"
                 f"- Scores are submitted via the button-based embed in <#{SCOREBOARD_CHANNEL_ID}>\n"
                 f"- Check out <#{FULL_RULES_CHANNEL_ID}> for full rules"
             ),

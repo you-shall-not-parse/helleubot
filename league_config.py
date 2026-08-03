@@ -43,8 +43,8 @@ VALIDATION_CHANNEL_ID: int = 0
 
 # Division tables and rendered leaderboard images.
 LEADERBOARD_CHANNEL_IDS: dict[str, int] = {
-    "Axis Division": 0,
-    "Allied Division": 0,
+    "Division 1": 0,
+    "Division 2": 0,
 }
 
 # Upcoming Discord events calendar embed.
@@ -117,14 +117,14 @@ EMBED_COLOR: int = 0x5865F2
 
 # Divisions for the active season.
 DIVISION_CLANS: dict[str, list[str]] = {
-    "Allied Division": ["OFIN", "HG", "KRTS", "7DR", "RMC"],
-    "Axis Division": ["48th", "7PD", "ZFG", "PG60", "7CIE"],
+    "Division 1": ["48th", "7PD", "ZFG", "PG60", "7CIE"],
+    "Division 2": ["OFIN", "HG", "KRTS", "7DR", "RMC"],
 }
 
 # Display order for schedule-like surfaces.
 CLAN_DISPLAY_ORDER: list[str] = [
-    *DIVISION_CLANS["Allied Division"],
-    *DIVISION_CLANS["Axis Division"],
+    *DIVISION_CLANS["Division 1"],
+    *DIVISION_CLANS["Division 2"],
 ]
 
 # BYE is a display placeholder (not a Discord role).
@@ -161,19 +161,19 @@ def format_round_window(round_no: int) -> str:
 
 
 DIVISION_FIXTURES_BY_ROUND: dict[str, dict[int, list[tuple[str, str]]]] = {
-    "Allied Division": {
-        1: [("OFIN", "HG"), ("KRTS", "7DR")],
-        2: [("KRTS", "OFIN"), ("HG", "RMC")],
-        3: [("7DR", "OFIN"), ("KRTS", "RMC")],
-        4: [("OFIN", "RMC"), ("HG", "7DR")],
-        5: [("HG", "KRTS"), ("7DR", "RMC")],
-    },
-    "Axis Division": {
+    "Division 1": {
         1: [("48th", "7PD"), ("ZFG", "PG60")],
         2: [("ZFG", "48th"), ("7PD", "7CIE")],
         3: [("PG60", "48th"), ("ZFG", "7CIE")],
         4: [("7CIE", "48th"), ("7PD", "PG60")],
         5: [("7PD", "ZFG"), ("PG60", "7CIE")],
+    },
+    "Division 2": {
+        1: [("OFIN", "HG"), ("KRTS", "7DR")],
+        2: [("KRTS", "OFIN"), ("HG", "RMC")],
+        3: [("7DR", "OFIN"), ("KRTS", "RMC")],
+        4: [("OFIN", "RMC"), ("HG", "7DR")],
+        5: [("HG", "KRTS"), ("7DR", "RMC")],
     },
 }
 
