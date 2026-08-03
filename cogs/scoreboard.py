@@ -12,15 +12,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from data_paths import data_path
-from league_config import CLAN_ROLE_IDS, DIVISION_CLANS
+from league_config import CLAN_ROLE_IDS, DIVISION_CLANS, GUILD_ID
 
 
 # -----------------------------
 # Config (fill these in)
 # -----------------------------
-
-# Guild scope for slash commands (set this to your server ID)
-GUILD_ID: int = 1462382487622914079
 
 # Role allowed to use admin scoreboard edit commands
 ADMIN_ROLE_ID: int = 1109147750932676649

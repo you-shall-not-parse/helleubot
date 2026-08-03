@@ -16,13 +16,11 @@ from discord.ext import tasks
 from cogs.streamercalendar import maybe_post_streamer_request, maybe_remove_streamer_request
 
 from data_paths import data_path
-from league_config import CLAN_ROLE_IDS, DIVISION_CLANS, DIVISION_FIXTURES_BY_ROUND, ROUND_WINDOWS, STREAMER_ROLE_ID
+from league_config import CLAN_ROLE_IDS, DIVISION_CLANS, DIVISION_FIXTURES_BY_ROUND, GUILD_ID, ROUND_WINDOWS, STREAMER_ROLE_ID
 
 # =============================
 # CONFIG (EDIT THIS)
 # =============================
-
-GUILD_ID = 1462382487622914079
 
 # Feature toggles
 # Set these to False to disable the related controls and requirements.

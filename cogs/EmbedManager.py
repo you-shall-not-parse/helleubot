@@ -5,9 +5,9 @@ import os
 from typing import Optional
 
 from data_paths import data_path
+from league_config import GUILD_ID
 
 # ---------------- CONFIG ----------------
-GUILD_ID = 1462382487622914079  # your guild ID
 COG_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(COG_DIR, os.pardir))
 DATA_FILE = data_path("stored_embeds.json")

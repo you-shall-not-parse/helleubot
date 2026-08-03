@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from data_paths import data_path
-from league_config import STREAMER_ROLE_ID
+from league_config import GUILD_ID, STREAMER_ROLE_ID
 
 # =============================
 # CONFIG (EDIT THIS)
@@ -25,7 +25,7 @@ STREAMER_CALENDAR_CHANNEL_ID = 1487937216159416442
 # Where we persist streamer request board state
 STREAMER_STATE_PATH = data_path("streamer_requests_state.json")
 
-STREAMER_GUILD_ID = 1462382487622914079
+STREAMER_GUILD_ID = GUILD_ID
 STREAMER_TARGET_GUILD = discord.Object(id=STREAMER_GUILD_ID)
 
 # Drop old requests a few hours after their scheduled start.

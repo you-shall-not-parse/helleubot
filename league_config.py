@@ -6,7 +6,7 @@ Keep common league constants here so multiple cogs stay in sync.
 from datetime import date
 
 # Guild scope for commands / lookups
-GUILD_ID: int = 1462382487622914079
+GUILD_ID: int = 1533957292947673288
 
 # Role to ping when a fixture is marked as streamed.
 STREAMER_ROLE_ID: int = 1478166069662191627
