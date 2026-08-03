@@ -6,6 +6,8 @@ from discord.ext import commands
 from dotenv import load_dotenv
 import asyncio
 
+from league_config import publish_teams_embed
+
 load_dotenv()
 TOKEN = os.getenv("LEAGUE_BOT_TOKEN")
 
@@ -41,6 +43,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     logging.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    try:
+        await publish_teams_embed(bot)
+    except Exception:
+        logging.exception("Failed to publish the configured teams embed")
     try:
         synced = await bot.tree.sync()
         logging.info(f"Synced {len(synced)} command(s)")

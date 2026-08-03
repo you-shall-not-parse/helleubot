@@ -5,6 +5,8 @@ Keep common league constants here so multiple cogs stay in sync.
 
 from datetime import date
 
+import discord
+
 # Guild scope for commands / lookups
 GUILD_ID: int = 1533957292947673288
 
@@ -37,6 +39,9 @@ CLAN_ROLE_IDS: dict[str, int] = {
 
 # Score submission embed and confirmed results.
 SCOREBOARD_CHANNEL_ID: int = 1533968864369573948
+
+# Clan/team listing.
+TEAMS_CHANNEL_ID: int = 1533973957823303711
 
 # Pending scores awaiting confirmation by the opposing clan.
 VALIDATION_CHANNEL_ID: int = 1533968999019315421
@@ -178,3 +183,64 @@ FIXTURES_BY_ROUND: dict[int, list[tuple[str, str]]] = {
     ]
     for round_no in sorted(ROUND_WINDOWS.keys())
 }
+
+
+TEAMS_EMBED_MARKER: str = "league-config-teams"
+
+
+def build_teams_embed() -> discord.Embed:
+    """Build the configured league overview shown in the teams channel."""
+
+    embed = discord.Embed(
+        title="League Teams",
+        description=f"{len(CLAN_ROLE_IDS)} clans competing across {len(DIVISION_CLANS)} divisions.",
+        color=EMBED_COLOR,
+    )
+
+    for division, clans in DIVISION_CLANS.items():
+        teams = [
+            f"{KEYWORD_EMOJI_TAGS.get(clan, '•')} <@&{CLAN_ROLE_IDS[clan]}> (`{clan}`)"
+            for clan in clans
+            if clan in CLAN_ROLE_IDS
+        ]
+        embed.add_field(name=division, value="\n".join(teams) or "No clans configured", inline=True)
+
+    rounds = [
+        f"**Round {round_no}:** {format_round_window(round_no)}"
+        for round_no in sorted(ROUND_WINDOWS)
+    ]
+    embed.add_field(name="Season Schedule", value="\n".join(rounds), inline=False)
+
+    channel_links = [
+        f"Scores: <#{SCOREBOARD_CHANNEL_ID}>",
+        f"Validation: <#{VALIDATION_CHANNEL_ID}>",
+        *(f"{division} table: <#{channel_id}>" for division, channel_id in LEADERBOARD_CHANNEL_IDS.items()),
+        f"Fixtures: <#{ORGANISER_EMBED_CHANNEL_ID}>",
+        f"Events: <#{EVENT_DISPLAY_CHANNEL_ID}>",
+        f"Streamer requests: <#{STREAMER_REQUESTS_CHANNEL_ID}>",
+        f"Streamer calendar: <#{STREAMER_CALENDAR_CHANNEL_ID}>",
+    ]
+    embed.add_field(name="League Channels", value="\n".join(channel_links), inline=False)
+    embed.add_field(name="Streamer Role", value=f"<@&{STREAMER_ROLE_ID}>", inline=False)
+    embed.set_footer(text=TEAMS_EMBED_MARKER)
+    return embed
+
+
+async def publish_teams_embed(bot: discord.Client) -> None:
+    """Post the teams overview, or update the existing bot-owned copy."""
+
+    channel = bot.get_channel(TEAMS_CHANNEL_ID)
+    if channel is None:
+        channel = await bot.fetch_channel(TEAMS_CHANNEL_ID)
+    if not isinstance(channel, discord.TextChannel):
+        raise TypeError(f"TEAMS_CHANNEL_ID {TEAMS_CHANNEL_ID} is not a text channel")
+
+    embed = build_teams_embed()
+    async for message in channel.history(limit=50):
+        if message.author.id != bot.user.id or not message.embeds:
+            continue
+        if message.embeds[0].footer.text == TEAMS_EMBED_MARKER:
+            await message.edit(embed=embed)
+            return
+
+    await channel.send(embed=embed)
