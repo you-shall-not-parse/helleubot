@@ -39,46 +39,35 @@ CLAN_ROLE_IDS: dict[str, int] = {
 SCOREBOARD_CHANNEL_ID: int = 1533968864369573948
 
 # Pending scores awaiting confirmation by the opposing clan.
-VALIDATION_CHANNEL_ID: int = 0
+VALIDATION_CHANNEL_ID: int = 1533968999019315421
 
 # Division tables and rendered leaderboard images.
 LEADERBOARD_CHANNEL_IDS: dict[str, int] = {
-    "Division 1": 0,
-    "Division 2": 0,
+    "Division 1": 1533969122193309836,
+    "Division 2": 1533969302947102950,
 }
 
 # Upcoming Discord events calendar embed.
 EVENT_DISPLAY_CHANNEL_ID: int = 1533968625055301784
 
 # Parent text channel for threads automatically created for Discord events.
-EVENT_THREADS_PARENT_CHANNEL_ID: int = 0
+EVENT_THREADS_PARENT_CHANNEL_ID: int = 1533968999019315421
 
 # Home channel for the fixture organiser embed.
-ORGANISER_EMBED_CHANNEL_ID: int = 0
+ORGANISER_EMBED_CHANNEL_ID: int = 1533970006428221630
 
 # Parent forum channels for fixture negotiation posts.
 FIXTURE_FORUM_CHANNEL_IDS: dict[str, int] = {
-    "Division 1": 0,
-    "Division 2": 0,
+    "Division 1": 1533969661329145919,
+    "Division 2": 1533969797262606426,
 }
 
 # Optional voice/stage channel for scheduled events; None creates external events.
-SCHEDULED_EVENT_CHANNEL_ID: int | None = None
+SCHEDULED_EVENT_CHANNEL_ID: int | None = 1533957293639602271
 
 # Streamer request messages and the streamer calendar/board.
-STREAMER_REQUESTS_CHANNEL_ID: int = 0
-STREAMER_CALENDAR_CHANNEL_ID: int = 0
-
-# Channels where EmbedManager posts its persistent information embeds.
-ABOUT_EMBED_CHANNEL_ID: int = 0
-RULES_EMBED_CHANNEL_ID: int = 0
-
-# Extra destinations mentioned inside the information embeds.
-LEAGUE_INFO_CHANNEL_ID: int = 0
-FULL_RULES_CHANNEL_ID: int = 0
-SEASON_SCHEDULE_CHANNEL_ID: int = 0
-ADMIN_CONTACT_CHANNEL_ID: int = 0
-
+STREAMER_REQUESTS_CHANNEL_ID: int = 1533971238748426361
+STREAMER_CALENDAR_CHANNEL_ID: int = 1533971281521803285
 
 # =============================
 # Shared emoji tagging
