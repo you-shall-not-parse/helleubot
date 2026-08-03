@@ -16,16 +16,16 @@ STREAMER_ROLE_ID: int = 1478166069662191627
 # Active clan roles (name -> role_id)
 # NOTE: BYE is not a Discord role and should not be added here.
 CLAN_ROLE_IDS: dict[str, int] = {
-    "OFIN": 1520125783983653105,
-    "HG": 1517652132541628456,
-    "KRTS": 1518583363953229894,
-    "7CIE": 1520121068600164582,
-    "RMC": 1462558256147857408,
-    "7DR": 1462383332598743080,
-    "7PD": 1464763568506536000,
-    "PG60": 1464763651108896778,
-    "48th": 1462558355166986261,
-    "ZFG": 1476529643128356925,
+    "Team 1": 1533979950728876093,
+    "Team 2": 1533979977068970105,
+    "Team 3": 0,
+    "Team 4": 0,
+    "Team 5": 0,
+    "Team 6": 0,
+    "Team 7": 0,
+    "Team 8": 0,
+    "Team 9": 0,
+    "Team 10": 0,
 }
 
 
@@ -79,19 +79,8 @@ STREAMER_CALENDAR_CHANNEL_ID: int = 1533971281521803285
 # =============================
 
 # If text contains one of these keywords, bots can append the emoji tag after it.
-# Put custom emoji names in Discord short-name format (e.g. ':48th:').
-KEYWORD_EMOJI_TAGS: dict[str, str] = {
-    "OFIN": ":Only_Finns:",
-    "HG": ":HG:",
-    "KRTS": ":KRTS:",
-    "7DR": ":7DR:",
-    "7PD": ":7PD:",
-    "48th": ":48th:",
-    "PG60": ":flag_de:",
-    "RMC": ":RMC:",
-    "7CIE": ":7CIE:",
-    "ZFG": ":ZFG:",
-}
+# Put custom emoji names in Discord short-name format (e.g. ':team_logo:').
+KEYWORD_EMOJI_TAGS: dict[str, str] = {}
 
 
 # =============================
@@ -114,8 +103,8 @@ EMBED_COLOR: int = 0x5865F2
 
 # Divisions for the active season.
 DIVISION_CLANS: dict[str, list[str]] = {
-    "Division 1": ["48th", "7PD", "ZFG", "PG60", "7CIE"],
-    "Division 2": ["OFIN", "HG", "KRTS", "7DR", "RMC"],
+    "Division 1": ["Team 1", "Team 2", "Team 3", "Team 4", "Team 5"],
+    "Division 2": ["Team 6", "Team 7", "Team 8", "Team 9", "Team 10"],
 }
 
 # Display order for schedule-like surfaces.
@@ -159,18 +148,18 @@ def format_round_window(round_no: int) -> str:
 
 DIVISION_FIXTURES_BY_ROUND: dict[str, dict[int, list[tuple[str, str]]]] = {
     "Division 1": {
-        1: [("48th", "7PD"), ("ZFG", "PG60")],
-        2: [("ZFG", "48th"), ("7PD", "7CIE")],
-        3: [("PG60", "48th"), ("ZFG", "7CIE")],
-        4: [("7CIE", "48th"), ("7PD", "PG60")],
-        5: [("7PD", "ZFG"), ("PG60", "7CIE")],
+        1: [("Team 1", "Team 2"), ("Team 3", "Team 4")],
+        2: [("Team 3", "Team 1"), ("Team 2", "Team 5")],
+        3: [("Team 4", "Team 1"), ("Team 3", "Team 5")],
+        4: [("Team 5", "Team 1"), ("Team 2", "Team 4")],
+        5: [("Team 2", "Team 3"), ("Team 4", "Team 5")],
     },
     "Division 2": {
-        1: [("OFIN", "HG"), ("KRTS", "7DR")],
-        2: [("KRTS", "OFIN"), ("HG", "RMC")],
-        3: [("7DR", "OFIN"), ("KRTS", "RMC")],
-        4: [("OFIN", "RMC"), ("HG", "7DR")],
-        5: [("HG", "KRTS"), ("7DR", "RMC")],
+        1: [("Team 6", "Team 7"), ("Team 8", "Team 9")],
+        2: [("Team 8", "Team 6"), ("Team 7", "Team 10")],
+        3: [("Team 9", "Team 6"), ("Team 8", "Team 10")],
+        4: [("Team 6", "Team 10"), ("Team 7", "Team 9")],
+        5: [("Team 7", "Team 8"), ("Team 9", "Team 10")],
     },
 }
 
@@ -199,7 +188,11 @@ def build_teams_embed() -> discord.Embed:
 
     for division, clans in DIVISION_CLANS.items():
         teams = [
-            f"{KEYWORD_EMOJI_TAGS.get(clan, '•')} <@&{CLAN_ROLE_IDS[clan]}> (`{clan}`)"
+            (
+                f"{KEYWORD_EMOJI_TAGS.get(clan, '•')} <@&{CLAN_ROLE_IDS[clan]}> (`{clan}`)"
+                if CLAN_ROLE_IDS.get(clan, 0) > 0
+                else f"{KEYWORD_EMOJI_TAGS.get(clan, '•')} {clan}"
+            )
             for clan in clans
             if clan in CLAN_ROLE_IDS
         ]
