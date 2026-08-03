@@ -20,7 +20,7 @@ from league_config import (
 	CLAN_ROLE_IDS,
 	DIVISION_CLANS,
 	DIVISION_FIXTURES_BY_ROUND,
-	FIXTURE_THREADS_PARENT_CHANNEL_ID,
+	FIXTURE_FORUM_CHANNEL_IDS,
 	GUILD_ID,
 	ORGANISER_EMBED_CHANNEL_ID,
 	ROUND_WINDOWS,
@@ -1413,9 +1413,13 @@ class CreateThreadButton(discord.ui.Button):
 			)
 			return
 
-		parent = interaction.guild.get_channel(FIXTURE_THREADS_PARENT_CHANNEL_ID)
-		if not isinstance(parent, discord.TextChannel):
-			await interaction.response.send_message("Thread parent channel not found/configured.", ephemeral=True)
+		forum_channel_id = FIXTURE_FORUM_CHANNEL_IDS.get(division, 0)
+		parent = interaction.guild.get_channel(forum_channel_id)
+		if not isinstance(parent, discord.ForumChannel):
+			await interaction.response.send_message(
+				f"The {division} fixture forum is not found or is not a forum channel.",
+				ephemeral=True,
+			)
 			return
 
 		# This operation can take longer than 3 seconds (thread creation + invites), so defer.
@@ -1426,39 +1430,24 @@ class CreateThreadButton(discord.ui.Button):
 		if len(thread_name) > 100:
 			thread_name = thread_name[:97] + "..."
 
-		# Create a private thread so only invited members can see.
+		# A forum post is a public thread. Visibility is controlled by the forum's
+		# channel permission overrides in Discord.
 		try:
-			thread = await parent.create_thread(
+			created = await parent.create_thread(
 				name=thread_name,
-				type=discord.ChannelType.private_thread,
 				auto_archive_duration=10080,
+				content=f"{requester_clan} vs {opponent_clan}",
 			)
+			thread = created.thread
 		except discord.Forbidden:
 			await interaction.followup.send(
-				"I don't have permission to create private threads here.",
+				"I don't have permission to create posts in this fixture forum.",
 				ephemeral=True,
 			)
 			return
 		except Exception as e:
 			await interaction.followup.send(f"Failed to create thread: {e}", ephemeral=True)
 			return
-
-		# Invite members of both clan roles (best-effort).
-		await thread.add_user(interaction.user)
-		clan_a_role = _clan_role(interaction.guild, requester_clan)
-		clan_b_role = _clan_role(interaction.guild, opponent_clan)
-		invited = 0
-		for role in [clan_a_role, clan_b_role]:
-			if role is None:
-				continue
-			for member in role.members:
-				if member.bot:
-					continue
-				try:
-					await thread.add_user(member)
-					invited += 1
-				except Exception:
-					continue
 
 		s = FixtureState(
 			thread_id=thread.id,
@@ -1487,7 +1476,7 @@ class CreateThreadButton(discord.ui.Button):
 			pass
 
 		await interaction.followup.send(
-			f"Thread created: {thread.mention} (invited {invited} members)",
+			f"Fixture forum post created: {thread.mention}",
 			ephemeral=True,
 		)
 

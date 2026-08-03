@@ -36,7 +36,7 @@ CLAN_ROLE_IDS: dict[str, int] = {
 # create external scheduled events instead of attaching them to voice/stage.
 
 # Score submission embed and confirmed results.
-SCOREBOARD_CHANNEL_ID: int = 0
+SCOREBOARD_CHANNEL_ID: int = 1533968864369573948
 
 # Pending scores awaiting confirmation by the opposing clan.
 VALIDATION_CHANNEL_ID: int = 0
@@ -48,7 +48,7 @@ LEADERBOARD_CHANNEL_IDS: dict[str, int] = {
 }
 
 # Upcoming Discord events calendar embed.
-EVENT_DISPLAY_CHANNEL_ID: int = 0
+EVENT_DISPLAY_CHANNEL_ID: int = 1533968625055301784
 
 # Parent text channel for threads automatically created for Discord events.
 EVENT_THREADS_PARENT_CHANNEL_ID: int = 0
@@ -56,8 +56,11 @@ EVENT_THREADS_PARENT_CHANNEL_ID: int = 0
 # Home channel for the fixture organiser embed.
 ORGANISER_EMBED_CHANNEL_ID: int = 0
 
-# Parent text channel for fixture negotiation threads.
-FIXTURE_THREADS_PARENT_CHANNEL_ID: int = 0
+# Parent forum channels for fixture negotiation posts.
+FIXTURE_FORUM_CHANNEL_IDS: dict[str, int] = {
+    "Division 1": 0,
+    "Division 2": 0,
+}
 
 # Optional voice/stage channel for scheduled events; None creates external events.
 SCHEDULED_EVENT_CHANNEL_ID: int | None = None
