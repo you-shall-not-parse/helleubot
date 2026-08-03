@@ -5,7 +5,18 @@ import os
 from typing import Optional
 
 from data_paths import data_path
-from league_config import GUILD_ID
+from league_config import (
+    ABOUT_EMBED_CHANNEL_ID,
+    ADMIN_CONTACT_CHANNEL_ID,
+    FULL_RULES_CHANNEL_ID,
+    GUILD_ID,
+    LEADERBOARD_CHANNEL_IDS,
+    LEAGUE_INFO_CHANNEL_ID,
+    ORGANISER_EMBED_CHANNEL_ID,
+    RULES_EMBED_CHANNEL_ID,
+    SCOREBOARD_CHANNEL_ID,
+    SEASON_SCHEDULE_CHANNEL_ID,
+)
 
 # ---------------- CONFIG ----------------
 COG_DIR = os.path.dirname(__file__)
@@ -90,7 +101,7 @@ class EmbedManager(commands.Cog):
             value=(
                 "- Discord is apply-to-join\n"
                 "- 2–3 clan representatives per clan (no other clan members)\n"
-                "- No league chat channels, only <#1462382488784470181>"
+                f"- No league chat channels, only <#{LEAGUE_INFO_CHANNEL_ID}>"
             ),
             inline=False,
         )
@@ -98,10 +109,11 @@ class EmbedManager(commands.Cog):
             name=":question: How does the league work?",
             value=(
                 "- Single division, everyone plays each team once\n"
-                "- Match scheduling is handled directly between clan representatives using <#1464726144367464685>\n"
-                "- Fixtures, results, media and standings are provided **remotely** into your clan discord via <#1462384116376014911> \n"
-                "- Scores submitted via button-based embed message, opposing clan confirms the result and result is reposed in <#1462387812815998997>\n"
-                "- Check out <#1464642927438463269> for full rules"
+                f"- Match scheduling is handled directly between clan representatives using <#{ORGANISER_EMBED_CHANNEL_ID}>\n"
+                f"- Axis and Allied standings are posted in <#{LEADERBOARD_CHANNEL_IDS['Axis Division']}> "
+                f"and <#{LEADERBOARD_CHANNEL_IDS['Allied Division']}>\n"
+                f"- Scores are submitted via the button-based embed in <#{SCOREBOARD_CHANNEL_ID}>\n"
+                f"- Check out <#{FULL_RULES_CHANNEL_ID}> for full rules"
             ),
             inline=False,
         )
@@ -109,8 +121,8 @@ class EmbedManager(commands.Cog):
             name=" :pencil: How and when do we join?",
             value=(
                 "- European teams :flag_eu: only are permitted to take part\n"
-                "- Check out the current season schedule and fixtures in <#1462388344205082685>\n"
-                "- Contact an admin in <#1462388616025210952> to express interest\n"
+                f"- Check out the current season schedule and fixtures in <#{SEASON_SCHEDULE_CHANNEL_ID}>\n"
+                f"- Contact an admin in <#{ADMIN_CONTACT_CHANNEL_ID}> to express interest\n"
             ),
             inline=False,
         )
@@ -125,7 +137,7 @@ class EmbedManager(commands.Cog):
 
         blocks.append({
             "key": "about_us",
-            "channel_id": 1462387027046830212,
+            "channel_id": ABOUT_EMBED_CHANNEL_ID,
             "embed": embed1
         })
         # ---------------- EMBED 2: DISCORD SERVER RULES ----------------
@@ -155,7 +167,7 @@ class EmbedManager(commands.Cog):
 
         blocks.append({
             "key": "discord_rules_conduct",
-            "channel_id": 1462382688777404601,
+            "channel_id": RULES_EMBED_CHANNEL_ID,
             "embed": embed3
         })
 

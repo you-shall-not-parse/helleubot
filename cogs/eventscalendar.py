@@ -12,6 +12,7 @@ from data_paths import data_path
 from league_config import (
     EMBED_COLOR,
     EVENT_DISPLAY_CHANNEL_ID,
+    EVENT_THREADS_PARENT_CHANNEL_ID,
     KEYWORD_EMOJI_TAGS,
     MAX_EVENTS_TO_DISPLAY,
     UPDATE_INTERVAL_MINUTES,
@@ -36,10 +37,6 @@ EVENTS_DISPLAY_STATE_PATH = data_path("levents_display_state.json")
 # Toggle: create a discussion thread when a scheduled event is created.
 # Set to False to disable thread creation completely.
 ENABLE_EVENT_THREADS = False
-
-# When enabled, the bot will create a thread in this channel.
-# Default: use the same channel as the calendar embed.
-EVENT_THREADS_PARENT_CHANNEL_ID = 1462382488784470181
 
 # Auto-archive duration for the created threads (minutes).
 # Valid values depend on the server settings: 60, 1440, 4320, 10080.

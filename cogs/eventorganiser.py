@@ -16,7 +16,17 @@ from discord.ext import tasks
 from cogs.streamercalendar import maybe_post_streamer_request, maybe_remove_streamer_request
 
 from data_paths import data_path
-from league_config import CLAN_ROLE_IDS, DIVISION_CLANS, DIVISION_FIXTURES_BY_ROUND, GUILD_ID, ROUND_WINDOWS, STREAMER_ROLE_ID
+from league_config import (
+	CLAN_ROLE_IDS,
+	DIVISION_CLANS,
+	DIVISION_FIXTURES_BY_ROUND,
+	FIXTURE_THREADS_PARENT_CHANNEL_ID,
+	GUILD_ID,
+	ORGANISER_EMBED_CHANNEL_ID,
+	ROUND_WINDOWS,
+	SCHEDULED_EVENT_CHANNEL_ID,
+	STREAMER_ROLE_ID,
+)
 
 # =============================
 # CONFIG (EDIT THIS)
@@ -30,17 +40,8 @@ ENABLE_SIDES = True
 # If ENABLE_SIDES is False (or sides aren't set), we still need a location for external events.
 EVENT_LOCATION_FALLBACK = "TBD Server"
 
-# Channel where the “Organise Fixture” embed is posted.
-ORGANISER_EMBED_CHANNEL_ID = 1464726144367464685
-
-# Thread parent channel (threads created under this channel)
-THREAD_PARENT_CHANNEL_ID = 1462382488784470181
-
 # Where to create the scheduled Discord event. Usually same guild.
 SCHEDULED_EVENT_GUILD_ID = GUILD_ID
-
-# Optional: channel to associate to the scheduled event (voice/stage). Leave None to create an external event.
-SCHEDULED_EVENT_CHANNEL_ID: Optional[int] = None
 
 # Remove completed fixtures and their scheduled events some hours after kickoff.
 FIXTURE_RETENTION_AFTER_START = timedelta(hours=8)
@@ -1412,7 +1413,7 @@ class CreateThreadButton(discord.ui.Button):
 			)
 			return
 
-		parent = interaction.guild.get_channel(THREAD_PARENT_CHANNEL_ID)
+		parent = interaction.guild.get_channel(FIXTURE_THREADS_PARENT_CHANNEL_ID)
 		if not isinstance(parent, discord.TextChannel):
 			await interaction.response.send_message("Thread parent channel not found/configured.", ephemeral=True)
 			return

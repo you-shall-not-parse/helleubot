@@ -10,17 +10,16 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from data_paths import data_path
-from league_config import GUILD_ID, STREAMER_ROLE_ID
+from league_config import (
+	GUILD_ID,
+	STREAMER_CALENDAR_CHANNEL_ID,
+	STREAMER_REQUESTS_CHANNEL_ID,
+	STREAMER_ROLE_ID,
+)
 
 # =============================
 # CONFIG (EDIT THIS)
 # =============================
-
-# Channel where streamer requests are posted.
-STREAMER_REQUESTS_CHANNEL_ID = 1484581158124519454
-
-# Channel where the streamer calendar/board is posted.
-STREAMER_CALENDAR_CHANNEL_ID = 1487937216159416442
 
 # Where we persist streamer request board state
 STREAMER_STATE_PATH = data_path("streamer_requests_state.json")

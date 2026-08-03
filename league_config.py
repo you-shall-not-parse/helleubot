@@ -28,6 +28,56 @@ CLAN_ROLE_IDS: dict[str, int] = {
 
 
 # =============================
+# Discord channels
+# =============================
+
+# Replace each 0 with a channel ID from the new server. The same channel may
+# be used for multiple settings. Leave SCHEDULED_EVENT_CHANNEL_ID as None to
+# create external scheduled events instead of attaching them to voice/stage.
+
+# Score submission embed and confirmed results.
+SCOREBOARD_CHANNEL_ID: int = 0
+
+# Pending scores awaiting confirmation by the opposing clan.
+VALIDATION_CHANNEL_ID: int = 0
+
+# Division tables and rendered leaderboard images.
+LEADERBOARD_CHANNEL_IDS: dict[str, int] = {
+    "Axis Division": 0,
+    "Allied Division": 0,
+}
+
+# Upcoming Discord events calendar embed.
+EVENT_DISPLAY_CHANNEL_ID: int = 0
+
+# Parent text channel for threads automatically created for Discord events.
+EVENT_THREADS_PARENT_CHANNEL_ID: int = 0
+
+# Home channel for the fixture organiser embed.
+ORGANISER_EMBED_CHANNEL_ID: int = 0
+
+# Parent text channel for fixture negotiation threads.
+FIXTURE_THREADS_PARENT_CHANNEL_ID: int = 0
+
+# Optional voice/stage channel for scheduled events; None creates external events.
+SCHEDULED_EVENT_CHANNEL_ID: int | None = None
+
+# Streamer request messages and the streamer calendar/board.
+STREAMER_REQUESTS_CHANNEL_ID: int = 0
+STREAMER_CALENDAR_CHANNEL_ID: int = 0
+
+# Channels where EmbedManager posts its persistent information embeds.
+ABOUT_EMBED_CHANNEL_ID: int = 0
+RULES_EMBED_CHANNEL_ID: int = 0
+
+# Extra destinations mentioned inside the information embeds.
+LEAGUE_INFO_CHANNEL_ID: int = 0
+FULL_RULES_CHANNEL_ID: int = 0
+SEASON_SCHEDULE_CHANNEL_ID: int = 0
+ADMIN_CONTACT_CHANNEL_ID: int = 0
+
+
+# =============================
 # Shared emoji tagging
 # =============================
 
@@ -50,9 +100,6 @@ KEYWORD_EMOJI_TAGS: dict[str, str] = {
 # =============================
 # Events calendar (display)
 # =============================
-
-# Channel ID where events will be posted
-EVENT_DISPLAY_CHANNEL_ID: int = 1464719794912755937
 
 # How often to update the events display (in minutes)
 UPDATE_INTERVAL_MINUTES: int = 30

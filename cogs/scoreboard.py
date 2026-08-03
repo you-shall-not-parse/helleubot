@@ -12,7 +12,14 @@ from discord import app_commands
 from discord.ext import commands
 
 from data_paths import data_path
-from league_config import CLAN_ROLE_IDS, DIVISION_CLANS, GUILD_ID
+from league_config import (
+	CLAN_ROLE_IDS,
+	DIVISION_CLANS,
+	GUILD_ID,
+	LEADERBOARD_CHANNEL_IDS,
+	SCOREBOARD_CHANNEL_ID,
+	VALIDATION_CHANNEL_ID,
+)
 
 
 # -----------------------------
@@ -21,18 +28,6 @@ from league_config import CLAN_ROLE_IDS, DIVISION_CLANS, GUILD_ID
 
 # Role allowed to use admin scoreboard edit commands
 ADMIN_ROLE_ID: int = 1109147750932676649
-
-# Channel where the main "Submit Scores" embed is posted
-SCOREBOARD_CHANNEL_ID: int = 1462387812815998997
-
-# Channel where results are posted for confirmation by the opposing clan
-VALIDATION_CHANNEL_ID: int = 1462382488784470181
-
-# Channels where the division leaderboards + match images are posted
-LEADERBOARD_CHANNEL_IDS: dict[str, int] = {
-	"Axis Division": 1462384116376014911,
-	"Allied Division": 1521924084588609696,
-}
 
 # Role IDs for each clan (name -> role_id)
 # Source of truth is league_config.py
@@ -224,7 +219,13 @@ def _build_leaderboard_text(stats: dict[str, Any]) -> str:
 def _build_scoreboard_embed() -> discord.Embed:
 	embed = discord.Embed(
 		title="Submit Match Scores",
-		description="- Click the button below to submit a match result for validation by the opposing clan. \n - It will then post a submission in <#1462382488784470181> for the opposing side to confirm \n - When confirmed the division league tables update in <#1462384116376014911> and <#1521924084588609696>; this may queue and take up to 5-10 mins \n - Make sure you have linked the relevant announcement channel as a feed in your clan discord or just copy and paste the table if you prefer",
+		description=(
+			"- Click the button below to submit a match result for validation by the opposing clan.\n"
+			f"- It will then post a submission in <#{VALIDATION_CHANNEL_ID}> for the opposing side to confirm.\n"
+			f"- When confirmed, the division league tables update in <#{LEADERBOARD_CHANNEL_IDS['Axis Division']}> "
+			f"and <#{LEADERBOARD_CHANNEL_IDS['Allied Division']}>; this may queue and take up to 5-10 mins.\n"
+			"- Link the relevant announcement channel as a feed in your clan Discord, or copy and paste the table."
+		),
 		colour=discord.Colour.green(),
 	)
 	return embed
